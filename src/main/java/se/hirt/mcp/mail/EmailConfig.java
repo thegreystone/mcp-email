@@ -31,12 +31,17 @@ package se.hirt.mcp.mail;
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
+import java.util.Map;
+
 @ConfigMapping(prefix = "email")
 public interface EmailConfig {
 
-    ImapConfig imap();
+    Map<String, AccountConfig> accounts();
 
-    SmtpConfig smtp();
+    interface AccountConfig {
+        ImapConfig imap();
+        SmtpConfig smtp();
+    }
 
     interface ImapConfig {
         String host();

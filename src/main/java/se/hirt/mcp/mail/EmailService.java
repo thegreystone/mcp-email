@@ -43,6 +43,7 @@ import jakarta.mail.search.FlagTerm;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
 public class EmailService {
@@ -50,44 +51,68 @@ public class EmailService {
     @Inject
     EmailConfig config;
 
-    private Store imapStore;
-    private String cachedSpamFolder;
+    private final Map<String, Store> imapStores = new ConcurrentHashMap<>();
+    private final Map<String, String> cachedSpamFolders = new ConcurrentHashMap<>();
+
+    // ── Account validation ──────────────────────────────────────────────
+
+    private EmailConfig.AccountConfig getAccountConfig(String accountName) throws MessagingException {
+        var ac = config.accounts().get(accountName);
+        if (ac == null) {
+            throw new MessagingException("Unknown account: " + accountName
+                    + ". Available: " + config.accounts().keySet());
+        }
+        return ac;
+    }
+
+    public Set<String> getAccountNames() {
+        return config.accounts().keySet();
+    }
 
     // ── IMAP connection ──────────────────────────────────────────────────
 
-    private synchronized Store getImapStore() throws MessagingException {
-        if (imapStore != null && imapStore.isConnected()) {
-            return imapStore;
+    private synchronized Store getImapStore(String accountName) throws MessagingException {
+        var existing = imapStores.get(accountName);
+        if (existing != null && existing.isConnected()) {
+            return existing;
         }
+        var ac = getAccountConfig(accountName);
+        var imapCfg = ac.imap();
+
         var props = new Properties();
-        var protocol = config.imap().ssl() ? "imaps" : "imap";
+        var protocol = imapCfg.ssl() ? "imaps" : "imap";
         props.put("mail.store.protocol", protocol);
-        props.put("mail." + protocol + ".host", config.imap().host());
-        props.put("mail." + protocol + ".port", String.valueOf(config.imap().port()));
-        if (config.imap().ssl()) {
+        props.put("mail." + protocol + ".host", imapCfg.host());
+        props.put("mail." + protocol + ".port", String.valueOf(imapCfg.port()));
+        if (imapCfg.ssl()) {
             props.put("mail." + protocol + ".ssl.enable", "true");
         }
 
         var session = Session.getInstance(props);
-        imapStore = session.getStore(protocol);
-        imapStore.connect(config.imap().username(), config.imap().password());
-        return imapStore;
+        var store = session.getStore(protocol);
+        store.connect(imapCfg.username(), imapCfg.password());
+        imapStores.put(accountName, store);
+        return store;
     }
 
     @PreDestroy
     void cleanup() {
-        try {
-            if (imapStore != null && imapStore.isConnected()) {
-                imapStore.close();
+        for (var entry : imapStores.entrySet()) {
+            try {
+                var store = entry.getValue();
+                if (store != null && store.isConnected()) {
+                    store.close();
+                }
+            } catch (MessagingException ignored) {
             }
-        } catch (MessagingException ignored) {
         }
+        imapStores.clear();
     }
 
     // ── Folder operations ────────────────────────────────────────────────
 
-    public String createFolder(String folderName) throws MessagingException {
-        var store = getImapStore();
+    public String createFolder(String account, String folderName) throws MessagingException {
+        var store = getImapStore(account);
         var folder = store.getFolder(folderName);
         if (folder.exists()) {
             return "Folder already exists: " + folderName;
@@ -98,8 +123,8 @@ public class EmailService {
         throw new MessagingException("Server refused to create folder: " + folderName);
     }
 
-    public List<String> listFolders() throws MessagingException {
-        var store = getImapStore();
+    public List<String> listFolders(String account) throws MessagingException {
+        var store = getImapStore(account);
         var folders = store.getDefaultFolder().list("*");
         var result = new ArrayList<String>();
         for (var f : folders) {
@@ -113,8 +138,8 @@ public class EmailService {
     public record FolderInfo(String fullName, char separator, int totalMessages, int unreadMessages,
                              boolean holdsMessages, boolean holdsFolders) {}
 
-    public List<FolderInfo> listFolderTree() throws MessagingException {
-        var store = getImapStore();
+    public List<FolderInfo> listFolderTree(String account) throws MessagingException {
+        var store = getImapStore(account);
         var folders = store.getDefaultFolder().list("*");
         var result = new ArrayList<FolderInfo>();
         for (var f : folders) {
@@ -142,42 +167,44 @@ public class EmailService {
     private static final List<String> SPAM_FOLDER_CANDIDATES = List.of(
             "Spam", "Junk", "[Gmail]/Spam", "Junk E-mail", "Bulk Mail", "Junk Email");
 
-    public String getSpamFolder() throws MessagingException {
-        if (cachedSpamFolder != null) return cachedSpamFolder;
+    public String getSpamFolder(String account) throws MessagingException {
+        var cached = cachedSpamFolders.get(account);
+        if (cached != null) return cached;
 
-        var store = getImapStore();
+        var store = getImapStore(account);
         for (var candidate : SPAM_FOLDER_CANDIDATES) {
             var folder = store.getFolder(candidate);
             if (folder.exists()) {
-                cachedSpamFolder = candidate;
-                return cachedSpamFolder;
+                cachedSpamFolders.put(account, candidate);
+                return candidate;
             }
         }
         return null;
     }
 
-    public void setSpamFolder(String folderName) {
-        cachedSpamFolder = folderName;
+    public void setSpamFolder(String account, String folderName) {
+        cachedSpamFolders.put(account, folderName);
     }
 
-    public void moveToSpam(String sourceFolderName, long uid) throws MessagingException {
-        moveToSpam(sourceFolderName, List.of(uid));
+    public void moveToSpam(String account, String sourceFolderName, long uid) throws MessagingException {
+        moveToSpam(account, sourceFolderName, List.of(uid));
     }
 
-    public int moveToSpam(String sourceFolderName, List<Long> uids) throws MessagingException {
-        var spamFolder = getSpamFolder();
+    public int moveToSpam(String account, String sourceFolderName, List<Long> uids) throws MessagingException {
+        var spamFolder = getSpamFolder(account);
         if (spamFolder == null) {
             throw new MessagingException("No spam folder detected. Use setSpamFolder to configure one.");
         }
-        return moveEmails(sourceFolderName, uids, spamFolder);
+        return moveEmails(account, sourceFolderName, uids, spamFolder);
     }
 
     // ── List emails ──────────────────────────────────────────────────────
 
     public record EmailHeader(long uid, String subject, String from, String date, boolean seen) {}
 
-    public List<EmailHeader> listEmails(String folderName, int offset, int limit) throws MessagingException {
-        var store = getImapStore();
+    public List<EmailHeader> listEmails(String account, String folderName, int offset, int limit)
+            throws MessagingException {
+        var store = getImapStore(account);
         var folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         try {
@@ -216,8 +243,9 @@ public class EmailService {
     public record EmailContent(String subject, String from, String to, String date,
                                boolean seen, String body, List<String> attachments) {}
 
-    public EmailContent readEmail(String folderName, long uid) throws MessagingException, IOException {
-        var store = getImapStore();
+    public EmailContent readEmail(String account, String folderName, long uid)
+            throws MessagingException, IOException {
+        var store = getImapStore(account);
         var folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         try {
@@ -280,14 +308,14 @@ public class EmailService {
 
     // ── Move emails ─────────────────────────────────────────────────────
 
-    public void moveEmail(String sourceFolderName, long uid, String targetFolderName)
+    public void moveEmail(String account, String sourceFolderName, long uid, String targetFolderName)
             throws MessagingException {
-        moveEmails(sourceFolderName, List.of(uid), targetFolderName);
+        moveEmails(account, sourceFolderName, List.of(uid), targetFolderName);
     }
 
-    public int moveEmails(String sourceFolderName, List<Long> uids, String targetFolderName)
+    public int moveEmails(String account, String sourceFolderName, List<Long> uids, String targetFolderName)
             throws MessagingException {
-        var store = getImapStore();
+        var store = getImapStore(account);
         var sourceFolder = store.getFolder(sourceFolderName);
         var targetFolder = store.getFolder(targetFolderName);
         sourceFolder.open(Folder.READ_WRITE);
@@ -316,8 +344,8 @@ public class EmailService {
 
     // ── Delete email (move to Trash) ─────────────────────────────────────
 
-    public void deleteEmail(String folderName, long uid) throws MessagingException {
-        var store = getImapStore();
+    public void deleteEmail(String account, String folderName, long uid) throws MessagingException {
+        var store = getImapStore(account);
         Folder trashFolder = null;
         for (var name : List.of("[Gmail]/Trash", "Trash", "Deleted Items", "Deleted")) {
             trashFolder = store.getFolder(name);
@@ -344,8 +372,9 @@ public class EmailService {
 
     // ── Search emails ────────────────────────────────────────────────────
 
-    public List<EmailHeader> searchEmails(String folderName, String query, int limit) throws MessagingException {
-        var store = getImapStore();
+    public List<EmailHeader> searchEmails(String account, String folderName, String query, int limit)
+            throws MessagingException {
+        var store = getImapStore(account);
         var folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         try {
@@ -381,24 +410,27 @@ public class EmailService {
 
     // ── Send email ───────────────────────────────────────────────────────
 
-    public void sendEmail(String to, String subject, String body) throws MessagingException {
+    public void sendEmail(String account, String to, String subject, String body) throws MessagingException {
+        var ac = getAccountConfig(account);
+        var smtpCfg = ac.smtp();
+
         var props = new Properties();
-        props.put("mail.smtp.host", config.smtp().host());
-        props.put("mail.smtp.port", String.valueOf(config.smtp().port()));
+        props.put("mail.smtp.host", smtpCfg.host());
+        props.put("mail.smtp.port", String.valueOf(smtpCfg.port()));
         props.put("mail.smtp.auth", "true");
-        if (config.smtp().starttls()) {
+        if (smtpCfg.starttls()) {
             props.put("mail.smtp.starttls.enable", "true");
         }
 
         var session = Session.getInstance(props, new Authenticator() {
             @Override
             protected PasswordAuthentication getPasswordAuthentication() {
-                return new PasswordAuthentication(config.smtp().username(), config.smtp().password());
+                return new PasswordAuthentication(smtpCfg.username(), smtpCfg.password());
             }
         });
 
         var message = new MimeMessage(session);
-        message.setFrom(new InternetAddress(config.smtp().username()));
+        message.setFrom(new InternetAddress(smtpCfg.username()));
         message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
         message.setSubject(subject);
         message.setText(body);
@@ -407,8 +439,8 @@ public class EmailService {
 
     // ── Unread email triage ─────────────────────────────────────────────
 
-    public int getUnreadCount(String folderName) throws MessagingException {
-        var store = getImapStore();
+    public int getUnreadCount(String account, String folderName) throws MessagingException {
+        var store = getImapStore(account);
         var folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         try {
@@ -426,8 +458,9 @@ public class EmailService {
 
     public record EmailSummary(long uid, Map<String, String> headers) {}
 
-    public List<EmailSummary> summarizeUnread(String folderName, int limit) throws MessagingException {
-        var store = getImapStore();
+    public List<EmailSummary> summarizeUnread(String account, String folderName, int limit)
+            throws MessagingException {
+        var store = getImapStore(account);
         var folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         try {
@@ -466,8 +499,9 @@ public class EmailService {
     public record FullEmail(long uid, int unreadLeft,
                             Map<String, String> headers, String body, List<String> attachments) {}
 
-    public FullEmail getNextUnreadEmail(String folderName) throws MessagingException, IOException {
-        var store = getImapStore();
+    public FullEmail getNextUnreadEmail(String account, String folderName)
+            throws MessagingException, IOException {
+        var store = getImapStore(account);
         var folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         try {
@@ -505,8 +539,8 @@ public class EmailService {
 
     // ── Mark as read / unread ────────────────────────────────────────────
 
-    public void markAs(String folderName, long uid, boolean seen) throws MessagingException {
-        var store = getImapStore();
+    public void markAs(String account, String folderName, long uid, boolean seen) throws MessagingException {
+        var store = getImapStore(account);
         var folder = store.getFolder(folderName);
         folder.open(Folder.READ_WRITE);
         try {
