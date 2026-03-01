@@ -1,0 +1,377 @@
+/*
+ * Copyright (C) 2026 Marcus Hirt
+ *
+ * This software is free:
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. The name of the author may not be used to endorse or promote products
+ *    derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESSED OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+ * OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ * IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+ * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+package se.hirt.mcp.mail;
+
+import io.quarkiverse.mcp.server.Tool;
+import io.quarkiverse.mcp.server.ToolArg;
+import jakarta.inject.Inject;
+
+import java.util.Arrays;
+import java.util.List;
+
+public class EmailTools {
+
+    @Inject
+    EmailService emailService;
+
+    @Tool(description = "Create a new mail folder. Use the IMAP separator (usually / or .) for sub-folders, "
+            + "e.g. 'Projects/OpenJDK' or 'Archive/2026'. Returns an error if the folder already exists.")
+    String createFolder(
+            @ToolArg(description = "Full folder name to create, e.g. 'Archive' or 'Projects/OpenJDK'") String folderName) {
+        try {
+            return emailService.createFolder(folderName);
+        } catch (Exception e) {
+            return "Error creating folder: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "List all mail folders (INBOX, Sent, Drafts, etc.) in the configured mailbox.")
+    String listFolders() {
+        try {
+            var folders = emailService.listFolders();
+            if (folders.isEmpty()) return "No folders found.";
+            return String.join("\n", folders);
+        } catch (Exception e) {
+            return "Error listing folders: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "List the full IMAP folder tree with hierarchy, message counts, and unread counts. "
+            + "Use this to understand the mailbox organization: discover folders, see which are empty or "
+            + "overloaded, and recommend structural improvements (e.g. missing archive folder, flat structure "
+            + "that could benefit from sub-folders, etc.). "
+            + "Also use this before spam triage to identify the spam/junk folder.")
+    String listFolderTree() {
+        try {
+            var folders = emailService.listFolderTree();
+            if (folders.isEmpty()) return "No folders found.";
+
+            var sb = new StringBuilder();
+            for (var f : folders) {
+                int depth = 0;
+                for (char c : f.fullName().toCharArray()) {
+                    if (c == f.separator()) depth++;
+                }
+                sb.append("  ".repeat(depth));
+                sb.append(f.fullName());
+                if (f.holdsMessages()) {
+                    sb.append("  (").append(f.totalMessages()).append(" messages, ")
+                      .append(f.unreadMessages()).append(" unread)");
+                }
+                if (!f.holdsMessages() && f.holdsFolders()) {
+                    sb.append("  [container only]");
+                }
+                sb.append("\n");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "Error listing folder tree: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "List emails in a folder. Returns UID, subject, sender, date, and read status. "
+            + "UIDs are stable identifiers that never change when other messages are moved or deleted. "
+            + "Results are ordered newest-first. Use offset/limit for pagination.")
+    String listEmails(
+            @ToolArg(description = "Folder name, e.g. INBOX") String folder,
+            @ToolArg(description = "Number of emails to skip (default 0)") int offset,
+            @ToolArg(description = "Max emails to return (default 20)") int limit) {
+        try {
+            if (limit <= 0) limit = 20;
+            var emails = emailService.listEmails(folder, offset, limit);
+            if (emails.isEmpty()) return "No emails found in " + folder;
+
+            var sb = new StringBuilder();
+            for (var e : emails) {
+                sb.append(e.seen() ? "  " : "* ");
+                sb.append("[UID ").append(e.uid()).append("] ");
+                sb.append(e.subject()).append("\n");
+                sb.append("    From: ").append(e.from()).append("  |  ").append(e.date()).append("\n");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "Error listing emails: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Read the full content of a specific email by its UID within a folder.")
+    String readEmail(
+            @ToolArg(description = "Folder name, e.g. INBOX") String folder,
+            @ToolArg(description = "Email UID (from listEmails, triageUnread, etc.)") long uid) {
+        try {
+            var email = emailService.readEmail(folder, uid);
+            var sb = new StringBuilder();
+            sb.append("Subject: ").append(email.subject()).append("\n");
+            sb.append("From:    ").append(email.from()).append("\n");
+            sb.append("To:      ").append(email.to()).append("\n");
+            sb.append("Date:    ").append(email.date()).append("\n");
+            sb.append("Read:    ").append(email.seen() ? "yes" : "no").append("\n");
+            if (!email.attachments().isEmpty()) {
+                sb.append("Attachments: ").append(String.join(", ", email.attachments())).append("\n");
+            }
+            sb.append("\n").append(email.body() != null ? email.body() : "(no body)");
+            return sb.toString();
+        } catch (Exception e) {
+            return "Error reading email: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Get the detected spam/junk folder for this mailbox. "
+            + "Auto-detects on first call, preferring 'Spam' if it exists, then Junk, [Gmail]/Spam, etc. "
+            + "Call this once at the start of a spam triage session and reuse the result. "
+            + "If auto-detection fails, use setSpamFolder to set it manually. "
+            + "Note: some users have a dedicated folder for training SpamAssassin or similar tools "
+            + "(e.g. 'spam-training' or 'sa-learn'). Ask the user if they use a specific folder for "
+            + "spam filter training, as that may be a better target than the default spam folder.")
+    String getSpamFolder() {
+        try {
+            var folder = emailService.getSpamFolder();
+            if (folder == null) {
+                return "Could not auto-detect a spam folder. Use setSpamFolder to configure one, "
+                        + "or call listFolderTree to find the right folder name.";
+            }
+            return folder;
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Manually set the spam/junk folder name if auto-detection picked the wrong one.")
+    String setSpamFolder(
+            @ToolArg(description = "Full folder name, e.g. [Gmail]/Spam or Junk") String folderName) {
+        emailService.setSpamFolder(folderName);
+        return "Spam folder set to: " + folderName;
+    }
+
+    @Tool(description = "Move one or more emails to the spam/junk folder. Uses the cached spam folder from "
+            + "getSpamFolder. Prefer this over moveEmail/moveEmails when triaging spam — no need to specify "
+            + "the target folder. Accepts a single UID or a comma-separated list for batch moves.")
+    String moveToSpam(
+            @ToolArg(description = "Source folder name, e.g. INBOX") String sourceFolder,
+            @ToolArg(description = "UID(s) to move to spam. Single UID or comma-separated, e.g. '1234,5678,9012'") String uids) {
+        try {
+            var uidList = parseUids(uids);
+            if (uidList.isEmpty()) return "No valid UIDs provided.";
+            int moved = emailService.moveToSpam(sourceFolder, uidList);
+            var spamFolder = emailService.getSpamFolder();
+            return "Moved " + moved + " message(s) from " + sourceFolder + " to " + spamFolder;
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Move a single email from one folder to another (e.g. INBOX to Archive). "
+            + "For moving multiple emails at once, prefer moveEmails to do it in a single IMAP operation.")
+    String moveEmail(
+            @ToolArg(description = "Source folder name") String sourceFolder,
+            @ToolArg(description = "UID of the email to move") long uid,
+            @ToolArg(description = "Target folder name") String targetFolder) {
+        try {
+            emailService.moveEmail(sourceFolder, uid, targetFolder);
+            return "Moved UID " + uid + " from " + sourceFolder + " to " + targetFolder;
+        } catch (Exception e) {
+            return "Error moving email: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Batch move multiple emails from one folder to another in a single IMAP operation. "
+            + "Much more efficient than calling moveEmail repeatedly. UIDs are stable and never change "
+            + "when other messages are moved, so you can safely collect UIDs first and move them all at once.")
+    String moveEmails(
+            @ToolArg(description = "Source folder name") String sourceFolder,
+            @ToolArg(description = "Comma-separated UIDs to move, e.g. '1234,5678,9012'") String uids,
+            @ToolArg(description = "Target folder name") String targetFolder) {
+        try {
+            var uidList = parseUids(uids);
+            if (uidList.isEmpty()) return "No valid UIDs provided.";
+            int moved = emailService.moveEmails(sourceFolder, uidList, targetFolder);
+            return "Moved " + moved + " message(s) from " + sourceFolder + " to " + targetFolder;
+        } catch (Exception e) {
+            return "Error moving emails: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Delete an email. Prefer moveEmail to a Trash folder instead of using this tool, "
+            + "since deletion is permanent. Only use this when the user explicitly asks to permanently delete.")
+    String deleteEmail(
+            @ToolArg(description = "Folder name") String folder,
+            @ToolArg(description = "UID of the email to delete") long uid) {
+        try {
+            emailService.deleteEmail(folder, uid);
+            return "Deleted UID " + uid + " from " + folder;
+        } catch (Exception e) {
+            return "Error deleting email: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Search emails in a folder by a query string. "
+            + "Matches against subject, sender, and body. Returns UIDs for stable identification.")
+    String searchEmails(
+            @ToolArg(description = "Folder to search in, e.g. INBOX") String folder,
+            @ToolArg(description = "Search query") String query,
+            @ToolArg(description = "Max results (default 20)") int limit) {
+        try {
+            if (limit <= 0) limit = 20;
+            var emails = emailService.searchEmails(folder, query, limit);
+            if (emails.isEmpty()) return "No emails matching '" + query + "' in " + folder;
+
+            var sb = new StringBuilder();
+            for (var e : emails) {
+                sb.append(e.seen() ? "  " : "* ");
+                sb.append("[UID ").append(e.uid()).append("] ");
+                sb.append(e.subject()).append("\n");
+                sb.append("    From: ").append(e.from()).append("  |  ").append(e.date()).append("\n");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "Error searching emails: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Send an email via SMTP.")
+    String sendEmail(
+            @ToolArg(description = "Recipient email address") String to,
+            @ToolArg(description = "Email subject") String subject,
+            @ToolArg(description = "Email body (plain text)") String body) {
+        try {
+            emailService.sendEmail(to, subject, body);
+            return "Email sent to " + to;
+        } catch (Exception e) {
+            return "Error sending email: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Quick-scan unread emails: returns only UID, subject and key headers (From, Reply-To, "
+            + "Return-Path, To, Cc, Authentication-Results, X-Spam-Status, X-Spam-Flag, X-Spam-Score, "
+            + "List-Unsubscribe, X-Mailer, X-Priority) for a batch of unread messages. No body is fetched. "
+            + "UIDs are stable — collect them here and use them directly with moveToSpam, moveEmails, "
+            + "readEmail, or markEmail without worrying about renumbering. "
+            + "Use this for a fast first pass to identify obvious spam (SpamAssassin flags, From/Return-Path "
+            + "mismatch, failed authentication) and potentially actionable emails, then use getNextUnreadEmail "
+            + "or readEmail only for messages that need closer inspection.")
+    String triageUnread(
+            @ToolArg(description = "Folder name, e.g. INBOX") String folder,
+            @ToolArg(description = "Max emails to scan, defaults to 20 if 0. Can be set to any value, e.g. 100.") int limit) {
+        try {
+            if (limit <= 0) limit = 20;
+            var summaries = emailService.summarizeUnread(folder, limit);
+            if (summaries.isEmpty()) return "No unread emails in " + folder;
+
+            var sb = new StringBuilder();
+            sb.append(summaries.size()).append(" unread email(s) scanned:\n\n");
+            for (var s : summaries) {
+                sb.append("[UID ").append(s.uid()).append("] ");
+                sb.append(s.headers().getOrDefault("Subject", "(no subject)")).append("\n");
+                for (var entry : s.headers().entrySet()) {
+                    if (!"Subject".equals(entry.getKey())) {
+                        sb.append("  ").append(entry.getKey()).append(": ").append(entry.getValue()).append("\n");
+                    }
+                }
+                sb.append("\n");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Get the number of unread emails in a folder.")
+    String getUnreadCount(
+            @ToolArg(description = "Folder name, e.g. INBOX") String folder) {
+        try {
+            int count = emailService.getUnreadCount(folder);
+            return count + " unread email(s) in " + folder;
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Get the next (oldest) unread email with ALL headers and body. "
+            + "Returns the email's stable UID for use with moveToSpam, moveEmail, markEmail, etc. "
+            + "Useful for spam triage: inspect headers like Return-Path, Received, "
+            + "Authentication-Results, DKIM-Signature, SPF, and DMARC to assess legitimacy. "
+            + "Emails flagged by SpamAssassin (X-Spam-Status: Yes, X-Spam-Flag: YES, or high "
+            + "X-Spam-Score) should be moved to the spam/junk folder. Use listFolderTree first "
+            + "to identify the correct spam folder. "
+            + "The email stays unread until you explicitly call markEmail. "
+            + "Call this repeatedly to process unread emails one by one.")
+    String getNextUnreadEmail(
+            @ToolArg(description = "Folder name, e.g. INBOX") String folder) {
+        try {
+            var email = emailService.getNextUnreadEmail(folder);
+            if (email == null) return "No unread emails in " + folder;
+
+            var sb = new StringBuilder();
+            sb.append("=== Unread email UID ").append(email.uid())
+              .append(" (").append(email.unreadLeft()).append(" unread remaining) ===\n\n");
+
+            sb.append("--- HEADERS ---\n");
+            for (var entry : email.headers().entrySet()) {
+                for (var line : entry.getValue().split("\n")) {
+                    sb.append(entry.getKey()).append(": ").append(line).append("\n");
+                }
+            }
+
+            if (!email.attachments().isEmpty()) {
+                sb.append("\n--- ATTACHMENTS ---\n");
+                for (var name : email.attachments()) {
+                    sb.append("  ").append(name).append("\n");
+                }
+            }
+
+            sb.append("\n--- BODY ---\n");
+            sb.append(email.body() != null ? email.body() : "(no body)");
+
+            return sb.toString();
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Mark an email as read or unread.")
+    String markEmail(
+            @ToolArg(description = "Folder name") String folder,
+            @ToolArg(description = "Email UID") long uid,
+            @ToolArg(description = "true to mark as read, false to mark as unread") boolean seen) {
+        try {
+            emailService.markAs(folder, uid, seen);
+            return "UID " + uid + " marked as " + (seen ? "read" : "unread");
+        } catch (Exception e) {
+            return "Error marking email: " + e.getMessage();
+        }
+    }
+
+    private List<Long> parseUids(String input) {
+        return Arrays.stream(input.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(Long::parseLong)
+                .toList();
+    }
+}
