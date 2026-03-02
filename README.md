@@ -25,6 +25,8 @@ An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/)
 | `searchEmails` | Search by subject, sender, or body |
 | `sendEmail` | Send an email via SMTP |
 | `replyEmail` | Reply to an email with proper threading headers |
+| `forwardEmail` | Verbatim forward (body never enters LLM context) |
+| `forwardEmailWithComment` | Forward with a comment prepended |
 | `markEmail` | Mark an email as read/unread |
 | `markEmails` | Batch mark multiple emails as read/unread |
 | `flagEmail` | Flag/star emails (IMAP `\Flagged`) with optional follow-up date |

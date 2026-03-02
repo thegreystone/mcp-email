@@ -33,7 +33,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.mail.*;
 import jakarta.mail.internet.InternetAddress;
+import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMessage;
+import jakarta.mail.internet.MimeMultipart;
 import jakarta.mail.search.OrTerm;
 import jakarta.mail.search.SearchTerm;
 import jakarta.mail.search.SubjectTerm;
@@ -187,16 +189,18 @@ public class EmailService {
         cachedSpamFolders.put(account, folderName);
     }
 
-    public void moveToSpam(String account, String sourceFolderName, long uid) throws MessagingException {
-        moveToSpam(account, sourceFolderName, List.of(uid));
+    public void moveToSpam(String account, String sourceFolderName, long uid, boolean markRead)
+            throws MessagingException {
+        moveToSpam(account, sourceFolderName, List.of(uid), markRead);
     }
 
-    public int moveToSpam(String account, String sourceFolderName, List<Long> uids) throws MessagingException {
+    public int moveToSpam(String account, String sourceFolderName, List<Long> uids, boolean markRead)
+            throws MessagingException {
         var spamFolder = getSpamFolder(account);
         if (spamFolder == null) {
             throw new MessagingException("No spam folder detected. Use setSpamFolder to configure one.");
         }
-        return moveEmails(account, sourceFolderName, uids, spamFolder);
+        return moveEmails(account, sourceFolderName, uids, spamFolder, markRead);
     }
 
     // ── Drafts folder detection ────────────────────────────────────────
@@ -382,13 +386,13 @@ public class EmailService {
 
     // ── Move emails ─────────────────────────────────────────────────────
 
-    public void moveEmail(String account, String sourceFolderName, long uid, String targetFolderName)
-            throws MessagingException {
-        moveEmails(account, sourceFolderName, List.of(uid), targetFolderName);
+    public void moveEmail(String account, String sourceFolderName, long uid, String targetFolderName,
+                          boolean markRead) throws MessagingException {
+        moveEmails(account, sourceFolderName, List.of(uid), targetFolderName, markRead);
     }
 
-    public int moveEmails(String account, String sourceFolderName, List<Long> uids, String targetFolderName)
-            throws MessagingException {
+    public int moveEmails(String account, String sourceFolderName, List<Long> uids, String targetFolderName,
+                          boolean markRead) throws MessagingException {
         var store = getImapStore(account);
         var sourceFolder = store.getFolder(sourceFolderName);
         var targetFolder = store.getFolder(targetFolderName);
@@ -405,6 +409,11 @@ public class EmailService {
             if (messages.isEmpty()) return 0;
 
             var msgArray = messages.toArray(new Message[0]);
+            if (markRead) {
+                for (var m : msgArray) {
+                    m.setFlag(Flags.Flag.SEEN, true);
+                }
+            }
             sourceFolder.copyMessages(msgArray, targetFolder);
             for (var m : msgArray) {
                 m.setFlag(Flags.Flag.DELETED, true);
@@ -581,6 +590,45 @@ public class EmailService {
 
             reply.setText(body);
             Transport.send(reply);
+        } finally {
+            folder.close(false);
+        }
+    }
+
+    // ── Forward email ────────────────────────────────────────────────────
+
+    public void forwardEmail(String account, String folderName, long uid, String to, String comment)
+            throws MessagingException {
+        var store = getImapStore(account);
+        var folder = store.getFolder(folderName);
+        folder.open(Folder.READ_ONLY);
+        try {
+            var uf = (UIDFolder) folder;
+            var original = uf.getMessageByUID(uid);
+            if (original == null) throw new MessagingException("No message with UID " + uid);
+
+            var forward = buildSmtpMessage(account);
+
+            var subject = original.getSubject();
+            if (subject == null) subject = "";
+            if (!subject.regionMatches(true, 0, "Fwd: ", 0, 5)) {
+                subject = "Fwd: " + subject;
+            }
+            forward.setSubject(subject);
+            forward.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
+
+            var multipart = new MimeMultipart();
+            if (comment != null && !comment.isEmpty()) {
+                var commentPart = new MimeBodyPart();
+                commentPart.setText(comment);
+                multipart.addBodyPart(commentPart);
+            }
+            var originalPart = new MimeBodyPart();
+            originalPart.setContent(original, "message/rfc822");
+            multipart.addBodyPart(originalPart);
+
+            forward.setContent(multipart);
+            Transport.send(forward);
         } finally {
             folder.close(false);
         }
