@@ -496,6 +496,44 @@ public class EmailService {
         }
     }
 
+    public List<EmailSummary> summarizeFolder(String account, String folderName, int offset, int limit)
+            throws MessagingException {
+        var store = getImapStore(account);
+        var folder = store.getFolder(folderName);
+        folder.open(Folder.READ_ONLY);
+        try {
+            var uf = (UIDFolder) folder;
+            int total = folder.getMessageCount();
+            if (total == 0) return List.of();
+
+            if (limit <= 0) limit = 20;
+            int end = total - offset;
+            int start = Math.max(1, end - limit + 1);
+            if (end < 1) return List.of();
+
+            var messages = folder.getMessages(start, end);
+            var fp = new FetchProfile();
+            fp.add(UIDFolder.FetchProfileItem.UID);
+            folder.fetch(messages, fp);
+
+            var result = new ArrayList<EmailSummary>(messages.length);
+            for (int i = messages.length - 1; i >= 0; i--) {
+                var m = messages[i];
+                var headers = new LinkedHashMap<String, String>();
+                for (var name : TRIAGE_HEADERS) {
+                    var values = m.getHeader(name);
+                    if (values != null && values.length > 0) {
+                        headers.put(name, String.join("; ", values));
+                    }
+                }
+                result.add(new EmailSummary(uf.getUID(m), headers));
+            }
+            return result;
+        } finally {
+            folder.close(false);
+        }
+    }
+
     public record FullEmail(long uid, int unreadLeft,
                             Map<String, String> headers, String body, List<String> attachments) {}
 
