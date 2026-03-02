@@ -53,6 +53,7 @@ public class EmailService {
 
     private final Map<String, Store> imapStores = new ConcurrentHashMap<>();
     private final Map<String, String> cachedSpamFolders = new ConcurrentHashMap<>();
+    private final Map<String, String> cachedDraftsFolders = new ConcurrentHashMap<>();
 
     // ── Account validation ──────────────────────────────────────────────
 
@@ -196,6 +197,79 @@ public class EmailService {
             throw new MessagingException("No spam folder detected. Use setSpamFolder to configure one.");
         }
         return moveEmails(account, sourceFolderName, uids, spamFolder);
+    }
+
+    // ── Drafts folder detection ────────────────────────────────────────
+
+    private static final List<String> DRAFTS_FOLDER_CANDIDATES = List.of(
+            "Drafts", "[Gmail]/Drafts", "Draft", "DRAFT");
+
+    public String getDraftsFolder(String account) throws MessagingException {
+        var cached = cachedDraftsFolders.get(account);
+        if (cached != null) return cached;
+
+        var store = getImapStore(account);
+        for (var candidate : DRAFTS_FOLDER_CANDIDATES) {
+            var folder = store.getFolder(candidate);
+            if (folder.exists()) {
+                cachedDraftsFolders.put(account, candidate);
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    public void setDraftsFolder(String account, String folderName) {
+        cachedDraftsFolders.put(account, folderName);
+    }
+
+    public void saveDraft(String account, String to, String subject, String body,
+                          String inReplyToFolder, long inReplyToUid) throws MessagingException {
+        var ac = getAccountConfig(account);
+        var session = Session.getInstance(new Properties());
+        var draft = new MimeMessage(session);
+        draft.setFrom(new InternetAddress(ac.smtp().username()));
+        draft.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
+        draft.setSubject(subject);
+        draft.setText(body);
+
+        // Thread as reply if original message info is provided
+        if (inReplyToFolder != null && !inReplyToFolder.isEmpty() && inReplyToUid > 0) {
+            var store = getImapStore(account);
+            var origFolder = store.getFolder(inReplyToFolder);
+            origFolder.open(Folder.READ_ONLY);
+            try {
+                var uf = (UIDFolder) origFolder;
+                var original = uf.getMessageByUID(inReplyToUid);
+                if (original != null) {
+                    var messageId = original.getHeader("Message-ID");
+                    if (messageId != null && messageId.length > 0) {
+                        draft.setHeader("In-Reply-To", messageId[0]);
+                        var origRefs = original.getHeader("References");
+                        var refs = (origRefs != null && origRefs.length > 0 ? origRefs[0] + " " : "")
+                                + messageId[0];
+                        draft.setHeader("References", refs);
+                    }
+                }
+            } finally {
+                origFolder.close(false);
+            }
+        }
+
+        var draftsName = getDraftsFolder(account);
+        if (draftsName == null) {
+            throw new MessagingException("No Drafts folder detected. Use setDraftsFolder to configure one.");
+        }
+
+        var store = getImapStore(account);
+        var draftsFolder = store.getFolder(draftsName);
+        draftsFolder.open(Folder.READ_WRITE);
+        try {
+            draft.setFlag(Flags.Flag.SEEN, true);
+            draftsFolder.appendMessages(new Message[]{draft});
+        } finally {
+            draftsFolder.close(false);
+        }
     }
 
     // ── List emails ──────────────────────────────────────────────────────
@@ -410,7 +484,7 @@ public class EmailService {
 
     // ── Send email ───────────────────────────────────────────────────────
 
-    public void sendEmail(String account, String to, String subject, String body) throws MessagingException {
+    private MimeMessage buildSmtpMessage(String account) throws MessagingException {
         var ac = getAccountConfig(account);
         var smtpCfg = ac.smtp();
 
@@ -431,10 +505,85 @@ public class EmailService {
 
         var message = new MimeMessage(session);
         message.setFrom(new InternetAddress(smtpCfg.username()));
+        return message;
+    }
+
+    public void sendEmail(String account, String to, String subject, String body) throws MessagingException {
+        var message = buildSmtpMessage(account);
         message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
         message.setSubject(subject);
         message.setText(body);
         Transport.send(message);
+    }
+
+    public void replyEmail(String account, String folderName, long uid, String body, boolean replyAll)
+            throws MessagingException {
+        var ac = getAccountConfig(account);
+        var store = getImapStore(account);
+        var folder = store.getFolder(folderName);
+        folder.open(Folder.READ_ONLY);
+        try {
+            var uf = (UIDFolder) folder;
+            var original = uf.getMessageByUID(uid);
+            if (original == null) throw new MessagingException("No message with UID " + uid);
+
+            var reply = buildSmtpMessage(account);
+
+            // Threading headers
+            var messageId = original.getHeader("Message-ID");
+            if (messageId != null && messageId.length > 0) {
+                reply.setHeader("In-Reply-To", messageId[0]);
+                var origRefs = original.getHeader("References");
+                var refs = (origRefs != null && origRefs.length > 0 ? origRefs[0] + " " : "") + messageId[0];
+                reply.setHeader("References", refs);
+            }
+
+            // Subject
+            var subject = original.getSubject();
+            if (subject == null) subject = "";
+            if (!subject.regionMatches(true, 0, "Re: ", 0, 4)) {
+                subject = "Re: " + subject;
+            }
+            reply.setSubject(subject);
+
+            // To: Reply-To if set, else From
+            var replyTo = original.getReplyTo();
+            if (replyTo != null && replyTo.length > 0) {
+                reply.setRecipients(Message.RecipientType.TO, replyTo);
+            } else {
+                reply.setRecipients(Message.RecipientType.TO, original.getFrom());
+            }
+
+            // Reply-All: add original To and Cc as Cc, excluding our own address
+            if (replyAll) {
+                var senderAddress = ac.smtp().username().toLowerCase();
+                var ccList = new ArrayList<Address>();
+                var origTo = original.getRecipients(Message.RecipientType.TO);
+                if (origTo != null) {
+                    for (var addr : origTo) {
+                        if (!addr.toString().toLowerCase().contains(senderAddress)) {
+                            ccList.add(addr);
+                        }
+                    }
+                }
+                var origCc = original.getRecipients(Message.RecipientType.CC);
+                if (origCc != null) {
+                    for (var addr : origCc) {
+                        if (!addr.toString().toLowerCase().contains(senderAddress)) {
+                            ccList.add(addr);
+                        }
+                    }
+                }
+                if (!ccList.isEmpty()) {
+                    reply.setRecipients(Message.RecipientType.CC, ccList.toArray(new Address[0]));
+                }
+            }
+
+            reply.setText(body);
+            Transport.send(reply);
+        } finally {
+            folder.close(false);
+        }
     }
 
     // ── Unread email triage ─────────────────────────────────────────────
@@ -586,6 +735,50 @@ public class EmailService {
             var message = uf.getMessageByUID(uid);
             if (message == null) throw new MessagingException("No message with UID " + uid);
             message.setFlag(Flags.Flag.SEEN, seen);
+        } finally {
+            folder.close(false);
+        }
+    }
+
+    public int markEmails(String account, String folderName, List<Long> uids, boolean seen)
+            throws MessagingException {
+        var store = getImapStore(account);
+        var folder = store.getFolder(folderName);
+        folder.open(Folder.READ_WRITE);
+        try {
+            var uf = (UIDFolder) folder;
+            int count = 0;
+            for (long uid : uids) {
+                var m = uf.getMessageByUID(uid);
+                if (m != null) {
+                    m.setFlag(Flags.Flag.SEEN, seen);
+                    count++;
+                }
+            }
+            return count;
+        } finally {
+            folder.close(false);
+        }
+    }
+
+    // ── Flag emails (star / flag for follow-up) ─────────────────────────
+
+    public int flagEmails(String account, String folderName, List<Long> uids, boolean flagged)
+            throws MessagingException {
+        var store = getImapStore(account);
+        var folder = store.getFolder(folderName);
+        folder.open(Folder.READ_WRITE);
+        try {
+            var uf = (UIDFolder) folder;
+            int count = 0;
+            for (long uid : uids) {
+                var m = uf.getMessageByUID(uid);
+                if (m != null) {
+                    m.setFlag(Flags.Flag.FLAGGED, flagged);
+                    count++;
+                }
+            }
+            return count;
         } finally {
             folder.close(false);
         }

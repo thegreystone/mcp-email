@@ -24,7 +24,11 @@ An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/)
 | `deleteEmail` | Delete an email (moves to Trash by default) |
 | `searchEmails` | Search by subject, sender, or body |
 | `sendEmail` | Send an email via SMTP |
+| `replyEmail` | Reply to an email with proper threading headers |
 | `markEmail` | Mark an email as read/unread |
+| `markEmails` | Batch mark multiple emails as read/unread |
+| `flagEmail` | Flag/star emails (IMAP `\Flagged`) with optional follow-up date |
+| `saveDraft` | Save a draft email for user review |
 | `createFolder` | Create a new mail folder |
 
 All tools (except `listAccounts`) require an `account` parameter — the name of the account to operate on (e.g., `work`, `gmail`).
