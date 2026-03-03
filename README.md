@@ -1,5 +1,10 @@
 # MCP Email Server
 
+[![Build](https://github.com/thegreystone/mcp-email/actions/workflows/build.yml/badge.svg)](https://github.com/thegreystone/mcp-email/actions/workflows/build.yml)
+[![Java 21+](https://img.shields.io/badge/Java-21%2B-blue)](https://adoptium.net/)
+[![Quarkus](https://img.shields.io/badge/Quarkus-3.21-blueviolet)](https://quarkus.io/)
+[![License: BSD-3](https://img.shields.io/badge/License-BSD--3-green)](https://opensource.org/licenses/BSD-3-Clause)
+
 An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/) that exposes common email operations as tools for LLM clients like Claude. Supports multiple named email accounts (e.g., work + Gmail) from a single server instance.
 
 **WARNING:** This server performs real operations on your mailbox — moving, deleting, and sending emails. Always ensure you have a backup of your Maildir / emails before use. The author assumes no responsibility for any loss of data or unintended consequences resulting from the use of this MCP server. Use at your own risk.

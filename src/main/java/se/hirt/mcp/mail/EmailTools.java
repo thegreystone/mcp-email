@@ -696,7 +696,7 @@ public class EmailTools {
         }
     }
 
-    private List<Long> parseUids(String input) {
+    static List<Long> parseUids(String input) {
         return Arrays.stream(input.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
@@ -704,7 +704,7 @@ public class EmailTools {
                 .toList();
     }
 
-    private Map<String, List<Long>> parseBatchMoves(String input) {
+    static Map<String, List<Long>> parseBatchMoves(String input) {
         var result = new LinkedHashMap<String, List<Long>>();
         for (var group : input.split(";")) {
             group = group.trim();
