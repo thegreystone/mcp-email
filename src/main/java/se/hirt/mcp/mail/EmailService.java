@@ -425,6 +425,49 @@ public class EmailService {
         }
     }
 
+    public record BatchMoveResult(int totalMoved, Map<String, Integer> perFolder) {}
+
+    public BatchMoveResult batchMoveEmails(String account, String sourceFolderName,
+                                           Map<String, List<Long>> targetToUids, boolean markRead)
+            throws MessagingException {
+        var store = getImapStore(account);
+        var sourceFolder = store.getFolder(sourceFolderName);
+        sourceFolder.open(Folder.READ_WRITE);
+        try {
+            var uf = (UIDFolder) sourceFolder;
+            int totalMoved = 0;
+            var perFolder = new LinkedHashMap<String, Integer>();
+
+            for (var entry : targetToUids.entrySet()) {
+                var targetFolder = store.getFolder(entry.getKey());
+                var messages = new ArrayList<Message>();
+                for (long uid : entry.getValue()) {
+                    var m = uf.getMessageByUID(uid);
+                    if (m != null) messages.add(m);
+                }
+                if (messages.isEmpty()) continue;
+
+                var msgArray = messages.toArray(new Message[0]);
+                if (markRead) {
+                    for (var m : msgArray) {
+                        m.setFlag(Flags.Flag.SEEN, true);
+                    }
+                }
+                sourceFolder.copyMessages(msgArray, targetFolder);
+                for (var m : msgArray) {
+                    m.setFlag(Flags.Flag.DELETED, true);
+                }
+                totalMoved += msgArray.length;
+                perFolder.put(entry.getKey(), msgArray.length);
+            }
+
+            sourceFolder.expunge();
+            return new BatchMoveResult(totalMoved, perFolder);
+        } finally {
+            sourceFolder.close(false);
+        }
+    }
+
     // ── Delete email (move to Trash) ─────────────────────────────────────
 
     public void deleteEmail(String account, String folderName, long uid) throws MessagingException {
@@ -655,37 +698,89 @@ public class EmailService {
 
     public record EmailSummary(long uid, Map<String, String> headers) {}
 
-    public List<EmailSummary> summarizeUnread(String account, String folderName, int limit)
+    public record CompactEmailSummary(long uid, String from, String subject, String date,
+                                      double spamScore, boolean hasListUnsubscribe,
+                                      boolean fromReplyToMismatch) {}
+
+    public List<CompactEmailSummary> summarizeEmailsCompact(String account, String folderName,
+                                                              boolean unreadOnly, int offset, int limit)
             throws MessagingException {
         var store = getImapStore(account);
         var folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         try {
             var uf = (UIDFolder) folder;
-            var unreadTerm = new FlagTerm(new Flags(Flags.Flag.SEEN), false);
-            var messages = folder.search(unreadTerm);
-            if (messages.length == 0) return List.of();
+            if (limit <= 0) limit = 20;
 
-            var fp = new FetchProfile();
-            fp.add(UIDFolder.FetchProfileItem.UID);
-            folder.fetch(messages, fp);
+            Message[] messages;
+            if (unreadOnly) {
+                messages = folder.search(new FlagTerm(new Flags(Flags.Flag.SEEN), false));
+                if (messages.length == 0) return List.of();
+                var fp = new FetchProfile();
+                fp.add(FetchProfile.Item.ENVELOPE);
+                fp.add(UIDFolder.FetchProfileItem.UID);
+                folder.fetch(messages, fp);
+                Arrays.sort(messages, Comparator.comparingLong(m -> {
+                    try { return uf.getUID(m); } catch (Exception e) { return 0; }
+                }));
+            } else {
+                int total = folder.getMessageCount();
+                if (total == 0) return List.of();
+                int end = total - offset;
+                int start = Math.max(1, end - limit + 1);
+                if (end < 1) return List.of();
+                messages = folder.getMessages(start, end);
+                var fp = new FetchProfile();
+                fp.add(FetchProfile.Item.ENVELOPE);
+                fp.add(UIDFolder.FetchProfileItem.UID);
+                folder.fetch(messages, fp);
+            }
 
-            Arrays.sort(messages, Comparator.comparingLong(m -> {
-                try { return uf.getUID(m); } catch (Exception e) { return 0; }
-            }));
-
-            int count = Math.min(messages.length, limit > 0 ? limit : 20);
-            var result = new ArrayList<EmailSummary>(count);
-            for (int i = 0; i < count; i++) {
+            int count = Math.min(messages.length, limit);
+            var result = new ArrayList<CompactEmailSummary>(count);
+            for (int i = unreadOnly ? 0 : messages.length - 1;
+                 unreadOnly ? i < count : i >= 0 && result.size() < count;
+                 i += unreadOnly ? 1 : -1) {
                 var m = messages[i];
-                var headers = new LinkedHashMap<String, String>();
-                for (var name : TRIAGE_HEADERS) {
-                    var values = m.getHeader(name);
-                    if (values != null && values.length > 0) {
-                        headers.put(name, String.join("; ", values));
+
+                var fromAddrs = m.getFrom();
+                var from = (fromAddrs != null && fromAddrs.length > 0) ? fromAddrs[0].toString() : "(unknown)";
+                var subject = m.getSubject() != null ? m.getSubject() : "(no subject)";
+                var date = m.getSentDate() != null ? m.getSentDate().toString() : "(no date)";
+
+                double spamScore = 0;
+                var scoreHeader = m.getHeader("X-Spam-Score");
+                if (scoreHeader != null && scoreHeader.length > 0) {
+                    try { spamScore = Double.parseDouble(scoreHeader[0].trim()); } catch (NumberFormatException ignored) {}
+                }
+                if (spamScore == 0) {
+                    var statusHeader = m.getHeader("X-Spam-Status");
+                    if (statusHeader != null && statusHeader.length > 0) {
+                        var status = statusHeader[0];
+                        int idx = status.indexOf("score=");
+                        if (idx >= 0) {
+                            var end = status.indexOf(' ', idx + 6);
+                            if (end < 0) end = status.length();
+                            try { spamScore = Double.parseDouble(status.substring(idx + 6, end)); } catch (NumberFormatException ignored) {}
+                        }
                     }
                 }
-                result.add(new EmailSummary(uf.getUID(m), headers));
+
+                var listUnsub = m.getHeader("List-Unsubscribe");
+                boolean hasListUnsubscribe = listUnsub != null && listUnsub.length > 0;
+
+                boolean fromReplyToMismatch = false;
+                var replyTo = m.getReplyTo();
+                if (replyTo != null && replyTo.length > 0 && fromAddrs != null && fromAddrs.length > 0) {
+                    var fromStr = fromAddrs[0] instanceof InternetAddress ia ? ia.getAddress() : fromAddrs[0].toString();
+                    var replyStr = replyTo[0] instanceof InternetAddress ia ? ia.getAddress() : replyTo[0].toString();
+                    if (fromStr != null && replyStr != null) {
+                        fromReplyToMismatch = !fromStr.equalsIgnoreCase(replyStr);
+                    }
+                }
+
+                result.add(new CompactEmailSummary(uf.getUID(m), from, subject, date,
+                        spamScore, hasListUnsubscribe, fromReplyToMismatch));
             }
             return result;
         } finally {
@@ -693,28 +788,43 @@ public class EmailService {
         }
     }
 
-    public List<EmailSummary> summarizeFolder(String account, String folderName, int offset, int limit)
+    public List<EmailSummary> summarizeEmails(String account, String folderName,
+                                              boolean unreadOnly, int offset, int limit)
             throws MessagingException {
         var store = getImapStore(account);
         var folder = store.getFolder(folderName);
         folder.open(Folder.READ_ONLY);
         try {
             var uf = (UIDFolder) folder;
-            int total = folder.getMessageCount();
-            if (total == 0) return List.of();
-
             if (limit <= 0) limit = 20;
-            int end = total - offset;
-            int start = Math.max(1, end - limit + 1);
-            if (end < 1) return List.of();
 
-            var messages = folder.getMessages(start, end);
-            var fp = new FetchProfile();
-            fp.add(UIDFolder.FetchProfileItem.UID);
-            folder.fetch(messages, fp);
+            Message[] messages;
+            if (unreadOnly) {
+                messages = folder.search(new FlagTerm(new Flags(Flags.Flag.SEEN), false));
+                if (messages.length == 0) return List.of();
+                var fp = new FetchProfile();
+                fp.add(UIDFolder.FetchProfileItem.UID);
+                folder.fetch(messages, fp);
+                Arrays.sort(messages, Comparator.comparingLong(m -> {
+                    try { return uf.getUID(m); } catch (Exception e) { return 0; }
+                }));
+            } else {
+                int total = folder.getMessageCount();
+                if (total == 0) return List.of();
+                int end = total - offset;
+                int start = Math.max(1, end - limit + 1);
+                if (end < 1) return List.of();
+                messages = folder.getMessages(start, end);
+                var fp = new FetchProfile();
+                fp.add(UIDFolder.FetchProfileItem.UID);
+                folder.fetch(messages, fp);
+            }
 
-            var result = new ArrayList<EmailSummary>(messages.length);
-            for (int i = messages.length - 1; i >= 0; i--) {
+            int count = Math.min(messages.length, limit);
+            var result = new ArrayList<EmailSummary>(count);
+            for (int i = unreadOnly ? 0 : messages.length - 1;
+                 unreadOnly ? i < count : i >= 0 && result.size() < count;
+                 i += unreadOnly ? 1 : -1) {
                 var m = messages[i];
                 var headers = new LinkedHashMap<String, String>();
                 for (var name : TRIAGE_HEADERS) {

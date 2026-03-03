@@ -8,30 +8,38 @@ An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/)
 
 | Tool | Description |
 |------|-------------|
+| **Discovery** | |
 | `listAccounts` | List configured account names (call first to discover accounts) |
 | `listFolders` | List all mail folders (INBOX, Sent, Drafts, etc.) |
 | `listFolderTree` | Full folder hierarchy with message/unread counts |
+| `createFolder` | Create a new mail folder |
+| **Reading** | |
 | `listEmails` | List emails in a folder with pagination |
 | `readEmail` | Read the full content of a specific email |
-| `getNextUnreadEmail` | Get oldest unread email with all headers (for spam triage) |
-| `triageUnread` | Quick-scan unread emails — headers only, no body |
+| `searchEmails` | Search by subject, sender, or body |
 | `getUnreadCount` | Count unread emails in a folder |
+| `getNextUnreadEmail` | Get oldest unread email with all headers |
+| **Triage** | |
+| `triageCompact` | Compact triage — from, subject, spam score, flags (start here) |
+| `triageEmails` | Full-header triage — use when compact is not enough |
+| **Organizing** | |
+| `moveEmail` | Move a single email between folders (with optional mark-read) |
+| `moveEmails` | Batch move emails to one target folder |
+| `batchMoveEmails` | Move emails to multiple target folders in one call |
+| `moveToSpam` | Move emails to the cached spam folder |
+| `markEmail` | Mark a single email as read/unread |
+| `markEmails` | Batch mark multiple emails as read/unread |
+| `flagEmail` | Flag/star emails (IMAP `\Flagged`) with optional follow-up date |
+| `deleteEmail` | Delete an email (moves to Trash by default) |
+| **Spam** | |
 | `getSpamFolder` | Auto-detect and cache the spam/junk folder |
 | `setSpamFolder` | Manually override the spam folder |
-| `moveToSpam` | Move an email to the cached spam folder |
-| `moveEmail` | Move an email between folders |
-| `moveEmails` | Batch move multiple emails in one operation |
-| `deleteEmail` | Delete an email (moves to Trash by default) |
-| `searchEmails` | Search by subject, sender, or body |
+| **Composing** | |
+| `saveDraft` | Save a draft email for user review (preferred over send) |
 | `sendEmail` | Send an email via SMTP |
 | `replyEmail` | Reply to an email with proper threading headers |
 | `forwardEmail` | Verbatim forward (body never enters LLM context) |
 | `forwardEmailWithComment` | Forward with a comment prepended |
-| `markEmail` | Mark an email as read/unread |
-| `markEmails` | Batch mark multiple emails as read/unread |
-| `flagEmail` | Flag/star emails (IMAP `\Flagged`) with optional follow-up date |
-| `saveDraft` | Save a draft email for user review |
-| `createFolder` | Create a new mail folder |
 
 All tools (except `listAccounts`) require an `account` parameter — the name of the account to operate on (e.g., `work`, `gmail`).
 
@@ -47,7 +55,7 @@ All tools (except `listAccounts`) require an `account` parameter — the name of
 mvn package -DskipTests
 
 # The artifact will be at:
-# target/mcp-email-server-1.0.0-SNAPSHOT-runner.jar
+# target/mcp-email-server-1.0.1-SNAPSHOT-runner.jar
 ```
 
 Note: Maven must use Java 21+. If your system Maven defaults to an older JDK, set `JAVA_HOME` before building:
@@ -100,7 +108,7 @@ You can define as many accounts as needed. For example, to add a `work` and `gma
       "args": [
         "-Dquarkus.mcp.server.stdio.enabled=true",
         "-jar",
-        "C:\\Users\\YourName\\path\\to\\mcp-email-server-1.0.0-SNAPSHOT-runner.jar"
+        "C:\\Users\\YourName\\path\\to\\mcp-email-server-1.0.1-SNAPSHOT-runner.jar"
       ],
       "env": {
         "EMAIL_ACCOUNTS_WORK_IMAP_HOST": "imap.example.com",
