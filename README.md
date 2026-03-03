@@ -1,6 +1,7 @@
 # MCP Email Server
 
 [![Build](https://github.com/thegreystone/mcp-email/actions/workflows/build.yml/badge.svg)](https://github.com/thegreystone/mcp-email/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/thegreystone/mcp-email)](https://github.com/thegreystone/mcp-email/releases/latest)
 [![Java 21+](https://img.shields.io/badge/Java-21%2B-blue)](https://adoptium.net/)
 [![Quarkus](https://img.shields.io/badge/Quarkus-3.21-blueviolet)](https://quarkus.io/)
 [![License: BSD-3](https://img.shields.io/badge/License-BSD--3-green)](https://opensource.org/licenses/BSD-3-Clause)
@@ -49,26 +50,13 @@ An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/)
 
 All tools (except `listAccounts`) require an `account` parameter — the name of the account to operate on (e.g., `work`, `gmail`).
 
-## Prerequisites
+## Quick Start
 
-- Java 21+ (tested with JDK 25)
-- Maven 3.9+ (only needed for building)
+The fastest way to get started is to download a pre-built release:
 
-## Build
-
-```bash
-# Build the uber-jar
-mvn package -DskipTests
-
-# The artifact will be at:
-# target/mcp-email-server-1.0.1-SNAPSHOT-runner.jar
-```
-
-Note: Maven must use Java 21+. If your system Maven defaults to an older JDK, set `JAVA_HOME` before building:
-
-```bash
-mvn package -DskipTests
-```
+1. Install [Java 21+](https://adoptium.net/) if you don't already have it.
+2. Download the latest `mcp-email-server-<version>-runner.jar` from the [Releases page](https://github.com/thegreystone/mcp-email/releases/latest).
+3. Configure your MCP client (see [Claude Desktop](#setting-up-with-claude-desktop) or [Claude Code](#setting-up-with-claude-code) below).
 
 ## Configuration
 
@@ -98,7 +86,7 @@ You can define as many accounts as needed. For example, to add a `work` and `gma
 
 ## Setting up with Claude Desktop
 
-1. Build the uber-jar (see above).
+1. Download the jar (see [Quick Start](#quick-start)) or [build from source](#building-from-source).
 
 2. Edit the Claude Desktop config file `claude_desktop_config.json`.
    On Windows it is located at `C:\Users\<UserName>\AppData\Roaming\Claude\claude_desktop_config.json`.
@@ -114,7 +102,7 @@ You can define as many accounts as needed. For example, to add a `work` and `gma
       "args": [
         "-Dquarkus.mcp.server.stdio.enabled=true",
         "-jar",
-        "C:\\Users\\YourName\\path\\to\\mcp-email-server-1.0.1-SNAPSHOT-runner.jar"
+        "C:\\Users\\YourName\\path\\to\\mcp-email-server-1.0.1-runner.jar"
       ],
       "env": {
         "EMAIL_ACCOUNTS_WORK_IMAP_HOST": "imap.example.com",
@@ -141,10 +129,22 @@ You can define as many accounts as needed. For example, to add a `work` and `gma
 
 Add the same config to your Claude Code MCP settings (`~/.claude/settings.json` or project-level `.claude/settings.json`).
 
+## Building from Source
+
+Only needed if you want to contribute or run a development build.
+
+**Prerequisites:** Java 21+ and Maven 3.9+
+
+```bash
+mvn package
+```
+
+The uber-jar will be at `target/mcp-email-server-<version>-runner.jar`.
+
 ## Troubleshooting
 
 - **Server disconnects immediately**: make sure `-Dquarkus.mcp.server.stdio.enabled=true` is in the `args` before `-jar`.
 - **No log output visible**: Quarkus logs go to `mcp-email-server.log` (in the working directory), not to stdout/stderr, to avoid interfering with the STDIO transport. Check that file for errors.
 - **Authentication errors**: for Gmail, you need an [App Password](https://myaccount.google.com/apppasswords), not your regular password. Make sure 2-Step Verification is enabled on your Google account first.
-- **Build fails**: ensure `JAVA_HOME` points to JDK 21+. The system `java` on PATH may differ from what Maven uses.
+- **Build fails** (building from source): ensure `JAVA_HOME` points to JDK 21+. The system `java` on PATH may differ from what Maven uses.
 - **"Unknown account" errors**: call `listAccounts` first to see which accounts are configured. Account names are lowercase as defined in the environment variables (e.g., `work`, `gmail`).
