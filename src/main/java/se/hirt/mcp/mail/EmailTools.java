@@ -138,7 +138,9 @@ public class EmailTools {
 
             var sb = new StringBuilder();
             for (var e : emails) {
-                sb.append(e.seen() ? "  " : "* ");
+                sb.append(e.seen() ? " " : "*");
+                sb.append(e.answered() ? "R" : e.forwarded() ? "F" : " ");
+                sb.append(" ");
                 sb.append("[UID ").append(e.uid()).append("] ");
                 sb.append(e.subject()).append("\n");
                 sb.append("    From: ").append(e.from()).append("  |  ").append(e.date()).append("\n");
@@ -169,6 +171,8 @@ public class EmailTools {
             sb.append("To:      ").append(email.to()).append("\n");
             sb.append("Date:    ").append(email.date()).append("\n");
             sb.append("Read:    ").append(email.seen() ? "yes" : "no").append("\n");
+            sb.append("Replied: ").append(email.answered() ? "yes" : "no").append("\n");
+            if (email.forwarded()) sb.append("Forwarded: yes\n");
             if (!email.attachments().isEmpty()) {
                 sb.append("Attachments: ").append(String.join(", ", email.attachments())).append("\n");
             }
@@ -331,7 +335,9 @@ public class EmailTools {
 
             var sb = new StringBuilder();
             for (var e : emails) {
-                sb.append(e.seen() ? "  " : "* ");
+                sb.append(e.seen() ? " " : "*");
+                sb.append(e.answered() ? "R" : e.forwarded() ? "F" : " ");
+                sb.append(" ");
                 sb.append("[UID ").append(e.uid()).append("] ");
                 sb.append(e.subject()).append("\n");
                 sb.append("    From: ").append(e.from()).append("  |  ").append(e.date()).append("\n");
@@ -389,6 +395,8 @@ public class EmailTools {
             for (var s : summaries) {
                 sb.append("[UID ").append(s.uid()).append("] ").append(s.subject()).append("\n");
                 sb.append("  From: ").append(s.from()).append("  |  ").append(s.date()).append("\n");
+                if (s.answered()) sb.append("  Replied: yes\n");
+                if (s.forwarded()) sb.append("  Forwarded: yes\n");
                 if (s.spamScore() != 0) sb.append("  Spam: ").append(s.spamScore()).append("\n");
                 if (s.hasListUnsubscribe()) sb.append("  List-Unsubscribe: yes\n");
                 if (s.fromReplyToMismatch()) sb.append("  From/Reply-To MISMATCH\n");
@@ -426,6 +434,8 @@ public class EmailTools {
             sb.append(UNTRUSTED_CONTENT_WARNING);
             sb.append(summaries.size()).append(unreadOnly ? " unread" : "").append(" email(s) scanned:\n\n");
             for (var s : summaries) {
+                sb.append(s.answered() ? "R" : s.forwarded() ? "F" : " ");
+                sb.append(" ");
                 sb.append("[UID ").append(s.uid()).append("] ");
                 sb.append(s.headers().getOrDefault("Subject", "(no subject)")).append("\n");
                 for (var entry : s.headers().entrySet()) {
@@ -476,7 +486,10 @@ public class EmailTools {
             var sb = new StringBuilder();
             sb.append(UNTRUSTED_CONTENT_WARNING);
             sb.append("=== Unread email UID ").append(email.uid())
-              .append(" (").append(email.unreadLeft()).append(" unread remaining) ===\n\n");
+              .append(" (").append(email.unreadLeft()).append(" unread remaining)");
+            if (email.answered()) sb.append(" [REPLIED]");
+            if (email.forwarded()) sb.append(" [FORWARDED]");
+            sb.append(" ===\n\n");
 
             sb.append("--- HEADERS ---\n");
             for (var entry : email.headers().entrySet()) {
