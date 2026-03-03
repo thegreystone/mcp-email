@@ -90,6 +90,8 @@ public class EmailTools {
             + "Use this to understand the mailbox organization: discover folders, see which are empty or "
             + "overloaded, and recommend structural improvements (e.g. missing archive folder, flat structure "
             + "that could benefit from sub-folders, etc.). "
+            + "IMPORTANT: Always call this BEFORE triaging emails so you know the user's folder structure "
+            + "and can sort emails into the right destinations (e.g. lists/*, projects/*, Archive). "
             + "Also use this before spam triage to identify the spam/junk folder. "
             + "Call listAccounts first to discover available accounts.")
     String listFolderTree(
@@ -369,11 +371,16 @@ public class EmailTools {
     }
 
     @Tool(description = "Compact triage of emails — returns only decision-relevant fields per email: "
-            + "UID, from, subject, date, spam score (numeric), has-list-unsubscribe (boolean), and "
-            + "from/reply-to mismatch (boolean). Uses ~80% fewer tokens than triageEmails by stripping "
-            + "Authentication-Results, DKIM, SPF, and other verbose headers. "
+            + "UID, from, subject, date, answered/forwarded status, spam score (numeric), "
+            + "has-list-unsubscribe (boolean), and from/reply-to mismatch (boolean). "
+            + "Uses ~80% fewer tokens than triageEmails by stripping Authentication-Results, DKIM, SPF, "
+            + "and other verbose headers. "
             + "Prefer this as the FIRST tool for triage. Use triageEmails only when you need raw headers "
             + "for deeper inspection of specific messages. "
+            + "WORKFLOW: Before triaging, call listFolderTree to load the folder structure into context. "
+            + "Study the folder hierarchy to understand how the user organizes their mail (e.g. lists/*, "
+            + "projects/*, Archive, etc.), then use that structure to sort emails into the right folders. "
+            + "If an email doesn't fit any existing folder, suggest creating one or ask the user. "
             + "Set unreadOnly=true for inbox triage, false for folder cleanup/review. "
             + "UIDs are stable — use them directly with batchMoveEmails, moveToSpam, markEmails, etc. "
             + "Call listAccounts first to discover available accounts. "
@@ -554,6 +561,31 @@ public class EmailTools {
             return result;
         } catch (Exception e) {
             return "Error flagging email: " + e.getMessage();
+        }
+    }
+
+    @Tool(description = "Correct the answered/forwarded flags on an email. Use this when triage reveals that a "
+            + "flag is missing (e.g. a reply was sent but \\Answered is not set, or a forward was done but "
+            + "$Forwarded is not set). Pass empty string for flags you don't want to change. "
+            + "Call listAccounts first to discover available accounts.")
+    String setEmailFlags(
+            @ToolArg(description = "Account name, e.g. 'work' or 'gmail'") String account,
+            @ToolArg(description = "Folder name, e.g. INBOX") String folder,
+            @ToolArg(description = "UID of the email") long uid,
+            @ToolArg(description = "Set answered flag: 'true', 'false', or empty string to leave unchanged") String answered,
+            @ToolArg(description = "Set forwarded flag: 'true', 'false', or empty string to leave unchanged") String forwarded) {
+        try {
+            Boolean answeredVal = answered != null && !answered.isBlank() ? Boolean.parseBoolean(answered) : null;
+            Boolean forwardedVal = forwarded != null && !forwarded.isBlank() ? Boolean.parseBoolean(forwarded) : null;
+            if (answeredVal == null && forwardedVal == null) return "No flags to change.";
+            emailService.setMessageFlags(account, folder, uid, answeredVal, forwardedVal);
+            var sb = new StringBuilder("UID " + uid + " in " + folder + ": ");
+            if (answeredVal != null) sb.append("answered=").append(answeredVal);
+            if (answeredVal != null && forwardedVal != null) sb.append(", ");
+            if (forwardedVal != null) sb.append("forwarded=").append(forwardedVal);
+            return sb.toString();
+        } catch (Exception e) {
+            return "Error setting flags: " + e.getMessage();
         }
     }
 

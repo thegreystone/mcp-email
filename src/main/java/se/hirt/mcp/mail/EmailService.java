@@ -970,4 +970,29 @@ public class EmailService {
             folder.close(false);
         }
     }
+
+    public void setMessageFlags(String account, String folderName, long uid,
+                                Boolean answered, Boolean forwarded) throws MessagingException {
+        var store = getImapStore(account);
+        var folder = store.getFolder(folderName);
+        folder.open(Folder.READ_WRITE);
+        try {
+            var uf = (UIDFolder) folder;
+            var m = uf.getMessageByUID(uid);
+            if (m == null) throw new MessagingException("No message with UID " + uid);
+            if (answered != null) {
+                m.setFlag(Flags.Flag.ANSWERED, answered);
+            }
+            if (forwarded != null) {
+                var flags = new Flags("$Forwarded");
+                if (forwarded) {
+                    m.setFlags(flags, true);
+                } else {
+                    m.setFlags(flags, false);
+                }
+            }
+        } finally {
+            folder.close(false);
+        }
+    }
 }
