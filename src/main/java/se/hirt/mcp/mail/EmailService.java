@@ -76,9 +76,26 @@ public class EmailService {
 
     private synchronized Store getImapStore(String accountName) throws MessagingException {
         var existing = imapStores.get(accountName);
-        if (existing != null && existing.isConnected()) {
-            return existing;
+        if (existing != null) {
+            if (isAlive(existing)) {
+                return existing;
+            }
+            try { existing.close(); } catch (MessagingException ignored) {}
+            imapStores.remove(accountName);
         }
+        return connectImapStore(accountName);
+    }
+
+    private boolean isAlive(Store store) {
+        try {
+            store.getDefaultFolder();
+            return store.isConnected();
+        } catch (MessagingException e) {
+            return false;
+        }
+    }
+
+    private Store connectImapStore(String accountName) throws MessagingException {
         var ac = getAccountConfig(accountName);
         var imapCfg = ac.imap();
 
