@@ -101,6 +101,8 @@ You can define as many accounts as needed. For example, to add a `work` and `gma
       "command": "java",
       "args": [
         "-Dquarkus.mcp.server.stdio.enabled=true",
+        "-Dquarkus.config.locations=.",
+        "-Duser.dir=C:\\Users\\YourName\\claude",
         "-jar",
         "C:\\Users\\YourName\\path\\to\\mcp-email-server-1.0.1-runner.jar"
       ],
@@ -143,6 +145,7 @@ The uber-jar will be at `target/mcp-email-server-<version>-runner.jar`.
 
 ## Troubleshooting
 
+- **`AccessDeniedException: C:\WINDOWS\system32\config`**: on Windows, Claude Desktop may launch the server with `C:\WINDOWS\system32` as the working directory, causing Quarkus to fail when scanning for config files. The `-Duser.dir` argument in the example config overrides the working directory, and `-Dquarkus.config.locations=.` prevents Quarkus from scanning restricted system directories. Point `-Duser.dir` to any directory your user can write to.
 - **Server disconnects immediately**: make sure `-Dquarkus.mcp.server.stdio.enabled=true` is in the `args` before `-jar`.
 - **No log output visible**: Quarkus logs go to `mcp-email-server.log` (in the working directory), not to stdout/stderr, to avoid interfering with the STDIO transport. Check that file for errors.
 - **Authentication errors**: for Gmail, you need an [App Password](https://myaccount.google.com/apppasswords), not your regular password. Make sure 2-Step Verification is enabled on your Google account first.
