@@ -129,7 +129,42 @@ You can define as many accounts as needed. For example, to add a `work` and `gma
 
 ## Setting up with Claude Code
 
-Add the same config to your Claude Code MCP settings (`~/.claude/settings.json` or project-level `.claude/settings.json`).
+1. Download the jar (see [Quick Start](#quick-start)) or [build from source](#building-from-source).
+
+2. Edit `~/.claude.json` and add an `mcpServers` section. Here is an example with two accounts (`work` and `gmail`):
+
+```json
+{
+  "mcpServers": {
+    "email": {
+      "command": "java",
+      "args": [
+        "-Dquarkus.mcp.server.stdio.enabled=true",
+        "-jar",
+        "/path/to/mcp-email-server-1.0.1-runner.jar"
+      ],
+      "env": {
+        "EMAIL_ACCOUNTS_WORK_IMAP_HOST": "imap.example.com",
+        "EMAIL_ACCOUNTS_WORK_IMAP_USERNAME": "user@example.com",
+        "EMAIL_ACCOUNTS_WORK_IMAP_PASSWORD": "your-app-password",
+        "EMAIL_ACCOUNTS_WORK_SMTP_HOST": "smtp.example.com",
+        "EMAIL_ACCOUNTS_WORK_SMTP_USERNAME": "user@example.com",
+        "EMAIL_ACCOUNTS_WORK_SMTP_PASSWORD": "your-app-password",
+        "EMAIL_ACCOUNTS_GMAIL_IMAP_HOST": "imap.gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_IMAP_USERNAME": "you@gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_IMAP_PASSWORD": "your-gmail-app-password",
+        "EMAIL_ACCOUNTS_GMAIL_SMTP_HOST": "smtp.gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_SMTP_USERNAME": "you@gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_SMTP_PASSWORD": "your-gmail-app-password"
+      }
+    }
+  }
+}
+```
+
+3. Restart Claude Code (or run `/mcp` to reconnect). The email tools should appear in the tool list.
+
+**Note:** Unlike Claude Desktop, Claude Code does not typically need the `-Duser.dir` and `-Dquarkus.config.locations` workarounds since it launches the server from a normal working directory.
 
 ## Building from Source
 
