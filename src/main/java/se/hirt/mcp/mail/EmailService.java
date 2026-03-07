@@ -385,18 +385,30 @@ public class EmailService {
         if (part.isMimeType("text/html")) {
             return "[HTML] " + part.getContent();
         }
-        if (part.isMimeType("multipart/*")) {
+        if (part.isMimeType("message/rfc822")) {
+            return extractText((Part) part.getContent());
+        }
+        if (part.isMimeType("multipart/alternative")) {
             var mp = (Multipart) part.getContent();
-            String html = null;
+            String fallback = null;
             for (int i = 0; i < mp.getCount(); i++) {
                 var bp = mp.getBodyPart(i);
                 String text = extractText(bp);
                 if (text != null) {
                     if (bp.isMimeType("text/plain")) return text;
-                    if (bp.isMimeType("text/html")) html = text;
+                    if (fallback == null) fallback = text;
                 }
             }
-            return html;
+            return fallback;
+        }
+        if (part.isMimeType("multipart/*")) {
+            var mp = (Multipart) part.getContent();
+            var parts = new ArrayList<String>();
+            for (int i = 0; i < mp.getCount(); i++) {
+                var text = extractText(mp.getBodyPart(i));
+                if (text != null) parts.add(text);
+            }
+            return parts.isEmpty() ? null : String.join("\n\n", parts);
         }
         return null;
     }
@@ -412,6 +424,8 @@ public class EmailService {
                 }
                 names.addAll(extractAttachmentNames(bp));
             }
+        } else if (part.isMimeType("message/rfc822")) {
+            names.addAll(extractAttachmentNames((Part) part.getContent()));
         }
         return names;
     }
