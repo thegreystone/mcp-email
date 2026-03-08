@@ -691,12 +691,17 @@ public class EmailTools {
     String saveDraft(
             @ToolArg(description = "Account name, e.g. 'work' or 'gmail'") String account,
             @ToolArg(description = "Recipient email address") String to,
+            @ToolArg(description = "CC recipients (comma-separated, empty string if none)") String cc,
+            @ToolArg(description = "BCC recipients (comma-separated, empty string if none)") String bcc,
             @ToolArg(description = "Email subject") String subject,
             @ToolArg(description = "Email body (plain text)") String body,
             @ToolArg(description = "Folder of the original email to reply to (empty string if not a reply)") String inReplyToFolder,
             @ToolArg(description = "UID of the original email to reply to (0 if not a reply)") long inReplyToUid) {
         try {
-            emailService.saveDraft(account, to, subject, body,
+            emailService.saveDraft(account, to,
+                    cc != null && !cc.isBlank() ? cc : null,
+                    bcc != null && !bcc.isBlank() ? bcc : null,
+                    subject, body,
                     inReplyToFolder != null && !inReplyToFolder.isEmpty() ? inReplyToFolder : null,
                     inReplyToUid);
             return "Draft saved to Drafts folder for account " + account;

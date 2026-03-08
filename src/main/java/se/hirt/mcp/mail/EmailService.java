@@ -232,7 +232,7 @@ public class EmailService {
     // ── Drafts folder detection ────────────────────────────────────────
 
     private static final List<String> DRAFTS_FOLDER_CANDIDATES = List.of(
-            "Drafts", "[Gmail]/Drafts", "Draft", "DRAFT");
+            "Drafts", "[Gmail]/Drafts", "Draft", "DRAFT", "INBOX.Drafts", "INBOX.Draft");
 
     public String getDraftsFolder(String account) throws MessagingException {
         var cached = cachedDraftsFolders.get(account);
@@ -246,6 +246,18 @@ public class EmailService {
                 return candidate;
             }
         }
+
+        // Fallback: scan all folders for one named "drafts" (case-insensitive)
+        for (var folder : store.getDefaultFolder().list("*")) {
+            var name = folder.getFullName();
+            var leaf = name.contains(String.valueOf(folder.getSeparator()))
+                    ? name.substring(name.lastIndexOf(folder.getSeparator()) + 1)
+                    : name;
+            if (leaf.equalsIgnoreCase("Drafts") || leaf.equalsIgnoreCase("Draft")) {
+                cachedDraftsFolders.put(account, name);
+                return name;
+            }
+        }
         return null;
     }
 
@@ -253,13 +265,20 @@ public class EmailService {
         cachedDraftsFolders.put(account, folderName);
     }
 
-    public void saveDraft(String account, String to, String subject, String body,
+    public void saveDraft(String account, String to, String cc, String bcc,
+                          String subject, String body,
                           String inReplyToFolder, long inReplyToUid) throws MessagingException {
         var ac = getAccountConfig(account);
         var session = Session.getInstance(new Properties());
         var draft = new MimeMessage(session);
         draft.setFrom(new InternetAddress(ac.smtp().username()));
         draft.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
+        if (cc != null) {
+            draft.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
+        }
+        if (bcc != null) {
+            draft.setRecipients(Message.RecipientType.BCC, InternetAddress.parse(bcc));
+        }
         draft.setSubject(subject);
         draft.setText(body);
 
@@ -296,6 +315,7 @@ public class EmailService {
         draftsFolder.open(Folder.READ_WRITE);
         try {
             draft.setFlag(Flags.Flag.SEEN, true);
+            draft.setFlag(Flags.Flag.DRAFT, true);
             draftsFolder.appendMessages(new Message[]{draft});
         } finally {
             draftsFolder.close(false);
