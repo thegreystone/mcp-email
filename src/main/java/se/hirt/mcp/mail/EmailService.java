@@ -977,23 +977,10 @@ public class EmailService {
         }
     }
 
-    // ── Mark as read / unread ────────────────────────────────────────────
+    // ── Set flags on one or more emails ─────────────────────────────────
 
-    public void markAs(String account, String folderName, long uid, boolean seen) throws MessagingException {
-        var store = getImapStore(account);
-        var folder = store.getFolder(folderName);
-        folder.open(Folder.READ_WRITE);
-        try {
-            var uf = (UIDFolder) folder;
-            var message = uf.getMessageByUID(uid);
-            if (message == null) throw new MessagingException("No message with UID " + uid);
-            message.setFlag(Flags.Flag.SEEN, seen);
-        } finally {
-            folder.close(false);
-        }
-    }
-
-    public int markEmails(String account, String folderName, List<Long> uids, boolean seen)
+    public int setMessageFlags(String account, String folderName, List<Long> uids,
+                               Boolean seen, Boolean answered, Boolean forwarded, Boolean flagged)
             throws MessagingException {
         var store = getImapStore(account);
         var folder = store.getFolder(folderName);
@@ -1003,62 +990,14 @@ public class EmailService {
             int count = 0;
             for (long uid : uids) {
                 var m = uf.getMessageByUID(uid);
-                if (m != null) {
-                    m.setFlag(Flags.Flag.SEEN, seen);
-                    count++;
-                }
+                if (m == null) continue;
+                if (seen != null) m.setFlag(Flags.Flag.SEEN, seen);
+                if (answered != null) m.setFlag(Flags.Flag.ANSWERED, answered);
+                if (forwarded != null) m.setFlags(new Flags("$Forwarded"), forwarded);
+                if (flagged != null) m.setFlag(Flags.Flag.FLAGGED, flagged);
+                count++;
             }
             return count;
-        } finally {
-            folder.close(false);
-        }
-    }
-
-    // ── Flag emails (star / flag for follow-up) ─────────────────────────
-
-    public int flagEmails(String account, String folderName, List<Long> uids, boolean flagged)
-            throws MessagingException {
-        var store = getImapStore(account);
-        var folder = store.getFolder(folderName);
-        folder.open(Folder.READ_WRITE);
-        try {
-            var uf = (UIDFolder) folder;
-            int count = 0;
-            for (long uid : uids) {
-                var m = uf.getMessageByUID(uid);
-                if (m != null) {
-                    m.setFlag(Flags.Flag.FLAGGED, flagged);
-                    count++;
-                }
-            }
-            return count;
-        } finally {
-            folder.close(false);
-        }
-    }
-
-    public void setMessageFlags(String account, String folderName, long uid,
-                                Boolean seen, Boolean answered, Boolean forwarded, Boolean flagged)
-            throws MessagingException {
-        var store = getImapStore(account);
-        var folder = store.getFolder(folderName);
-        folder.open(Folder.READ_WRITE);
-        try {
-            var uf = (UIDFolder) folder;
-            var m = uf.getMessageByUID(uid);
-            if (m == null) throw new MessagingException("No message with UID " + uid);
-            if (seen != null) {
-                m.setFlag(Flags.Flag.SEEN, seen);
-            }
-            if (answered != null) {
-                m.setFlag(Flags.Flag.ANSWERED, answered);
-            }
-            if (forwarded != null) {
-                m.setFlags(new Flags("$Forwarded"), forwarded);
-            }
-            if (flagged != null) {
-                m.setFlag(Flags.Flag.FLAGGED, flagged);
-            }
         } finally {
             folder.close(false);
         }

@@ -35,16 +35,15 @@ An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/)
 | `moveEmails` | Batch move emails to one target folder |
 | `batchMoveEmails` | Move emails to multiple target folders in one call |
 | `moveToSpam` | Move emails to the cached spam folder |
-| `markEmails` | Batch mark multiple emails as read/unread |
-| `setEmailFlags` | Set any combination of seen, answered, forwarded, and flagged/starred |
+| `setEmailFlags` | Set any combination of seen, answered, forwarded, and flagged/starred on one or more emails |
 | `deleteEmail` | Delete an email (moves to Trash by default) |
 | **Spam** | |
 | `getSpamFolder` | Auto-detect and cache the spam/junk folder |
 | `setSpamFolder` | Manually override the spam folder |
 | **Composing** | |
-| `saveDraft` | Save a draft email for user review (preferred over send) |
-| `sendEmail` | Send an email via SMTP |
-| `replyEmail` | Reply to an email with proper threading headers |
+| `saveDraft` | Save a draft email for user review with CC/BCC (preferred over send) |
+| `sendEmail` | Send an email via SMTP with CC/BCC |
+| `replyEmail` | Reply with proper threading headers and optional CC/BCC |
 | `forwardEmail` | Verbatim forward (body never enters LLM context) |
 | `forwardEmailWithComment` | Forward with a comment prepended |
 

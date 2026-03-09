@@ -535,22 +535,25 @@ public class EmailTools {
         }
     }
 
-    @Tool(description = "Set one or more IMAP flags on an email. Each flag is independent — only flags you specify "
-            + "are changed, all others are left untouched. Pass empty string for flags you don't want to change. "
+    @Tool(description = "Set one or more IMAP flags on one or more emails in a single IMAP session. "
+            + "Each flag is independent — only flags you specify are changed, all others are left untouched. "
+            + "Pass empty string for flags you don't want to change. "
             + "Available flags: seen (read/unread), answered (\\Answered), forwarded ($Forwarded), "
             + "flagged (\\Flagged — shows as starred in Gmail, flagged in Thunderbird/Outlook). "
             + "Use this during triage to star actionable emails, correct missing replied/forwarded flags, "
-            + "or mark emails as read/unread. "
+            + "or mark emails as read/unread. Accepts a single UID or comma-separated UIDs for batch operations. "
             + "Call listAccounts first to discover available accounts.")
     String setEmailFlags(
             @ToolArg(description = "Account name, e.g. 'work' or 'gmail'") String account,
             @ToolArg(description = "Folder name, e.g. INBOX") String folder,
-            @ToolArg(description = "UID of the email") long uid,
+            @ToolArg(description = "UID(s) of the email(s). Single UID or comma-separated, e.g. '1234,5678,9012'") String uids,
             @ToolArg(description = "Set seen (read) flag: 'true', 'false', or empty string to leave unchanged") String seen,
             @ToolArg(description = "Set answered flag: 'true', 'false', or empty string to leave unchanged") String answered,
             @ToolArg(description = "Set forwarded flag: 'true', 'false', or empty string to leave unchanged") String forwarded,
             @ToolArg(description = "Set flagged/starred flag: 'true', 'false', or empty string to leave unchanged") String flagged) {
         try {
+            var uidList = parseUids(uids);
+            if (uidList.isEmpty()) return "No valid UIDs provided.";
             Boolean seenVal = seen != null && !seen.isBlank() ? Boolean.parseBoolean(seen) : null;
             Boolean answeredVal = answered != null && !answered.isBlank() ? Boolean.parseBoolean(answered) : null;
             Boolean forwardedVal = forwarded != null && !forwarded.isBlank() ? Boolean.parseBoolean(forwarded) : null;
@@ -558,15 +561,14 @@ public class EmailTools {
             if (seenVal == null && answeredVal == null && forwardedVal == null && flaggedVal == null) {
                 return "No flags to change.";
             }
-            emailService.setMessageFlags(account, folder, uid, seenVal, answeredVal, forwardedVal, flaggedVal);
-            var sb = new StringBuilder("UID " + uid + " in " + folder + ": ");
+            int count = emailService.setMessageFlags(account, folder, uidList,
+                    seenVal, answeredVal, forwardedVal, flaggedVal);
             var parts = new java.util.ArrayList<String>();
             if (seenVal != null) parts.add("seen=" + seenVal);
             if (answeredVal != null) parts.add("answered=" + answeredVal);
             if (forwardedVal != null) parts.add("forwarded=" + forwardedVal);
             if (flaggedVal != null) parts.add("flagged=" + flaggedVal);
-            sb.append(String.join(", ", parts));
-            return sb.toString();
+            return "Updated " + count + " message(s) in " + folder + ": " + String.join(", ", parts);
         } catch (Exception e) {
             return "Error setting flags: " + e.getMessage();
         }
@@ -637,24 +639,6 @@ public class EmailTools {
             return "Forwarded UID " + uid + " from " + folder + " to " + to + " (with comment)";
         } catch (Exception e) {
             return "Error forwarding: " + e.getMessage();
-        }
-    }
-
-    @Tool(description = "Batch mark multiple emails as read/unread in a single IMAP operation. "
-            + "More efficient than calling markEmail repeatedly. "
-            + "Call listAccounts first to discover available accounts.")
-    String markEmails(
-            @ToolArg(description = "Account name, e.g. 'work' or 'gmail'") String account,
-            @ToolArg(description = "Folder name, e.g. INBOX") String folder,
-            @ToolArg(description = "Comma-separated UIDs to mark, e.g. '1234,5678,9012'") String uids,
-            @ToolArg(description = "true to mark as read, false to mark as unread") boolean seen) {
-        try {
-            var uidList = parseUids(uids);
-            if (uidList.isEmpty()) return "No valid UIDs provided.";
-            int count = emailService.markEmails(account, folder, uidList, seen);
-            return "Marked " + count + " message(s) as " + (seen ? "read" : "unread") + " in " + folder;
-        } catch (Exception e) {
-            return "Error marking emails: " + e.getMessage();
         }
     }
 
