@@ -530,21 +530,6 @@ public class EmailTools {
         }
     }
 
-    @Tool(description = "Mark an email as read or unread. "
-            + "Call listAccounts first to discover available accounts.")
-    String markEmail(
-            @ToolArg(description = "Account name, e.g. 'work' or 'gmail'") String account,
-            @ToolArg(description = "Folder name") String folder,
-            @ToolArg(description = "Email UID") long uid,
-            @ToolArg(description = "true to mark as read, false to mark as unread") boolean seen) {
-        try {
-            emailService.markAs(account, folder, uid, seen);
-            return "UID " + uid + " marked as " + (seen ? "read" : "unread");
-        } catch (Exception e) {
-            return "Error marking email: " + e.getMessage();
-        }
-    }
-
     @Tool(description = "Set one or more IMAP flags on an email. Each flag is independent — only flags you specify "
             + "are changed, all others are left untouched. Pass empty string for flags you don't want to change. "
             + "Available flags: seen (read/unread), answered (\\Answered), forwarded ($Forwarded), "

@@ -35,7 +35,6 @@ An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/)
 | `moveEmails` | Batch move emails to one target folder |
 | `batchMoveEmails` | Move emails to multiple target folders in one call |
 | `moveToSpam` | Move emails to the cached spam folder |
-| `markEmail` | Mark a single email as read/unread |
 | `markEmails` | Batch mark multiple emails as read/unread |
 | `setEmailFlags` | Set any combination of seen, answered, forwarded, and flagged/starred |
 | `deleteEmail` | Delete an email (moves to Trash by default) |
