@@ -1023,7 +1023,8 @@ public class EmailService {
     }
 
     public void setMessageFlags(String account, String folderName, long uid,
-                                Boolean answered, Boolean forwarded) throws MessagingException {
+                                Boolean seen, Boolean answered, Boolean forwarded, Boolean flagged)
+            throws MessagingException {
         var store = getImapStore(account);
         var folder = store.getFolder(folderName);
         folder.open(Folder.READ_WRITE);
@@ -1031,16 +1032,17 @@ public class EmailService {
             var uf = (UIDFolder) folder;
             var m = uf.getMessageByUID(uid);
             if (m == null) throw new MessagingException("No message with UID " + uid);
+            if (seen != null) {
+                m.setFlag(Flags.Flag.SEEN, seen);
+            }
             if (answered != null) {
                 m.setFlag(Flags.Flag.ANSWERED, answered);
             }
             if (forwarded != null) {
-                var flags = new Flags("$Forwarded");
-                if (forwarded) {
-                    m.setFlags(flags, true);
-                } else {
-                    m.setFlags(flags, false);
-                }
+                m.setFlags(new Flags("$Forwarded"), forwarded);
+            }
+            if (flagged != null) {
+                m.setFlag(Flags.Flag.FLAGGED, flagged);
             }
         } finally {
             folder.close(false);

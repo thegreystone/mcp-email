@@ -545,53 +545,37 @@ public class EmailTools {
         }
     }
 
-    @Tool(description = "Flag (star) one or more emails by setting the IMAP \\Flagged flag, which shows as starred "
-            + "in Gmail, flagged in Thunderbird/Outlook, etc. Use this during triage to mark actionable emails "
-            + "that need the user's attention. Accepts a single UID or comma-separated UIDs for batch flagging. "
-            + "Optionally include a follow-up date extracted from the email body (deadline, meeting time, RSVP date, etc.) "
-            + "— it will be echoed back so you can track when action is needed. "
-            + "Call listAccounts first to discover available accounts.")
-    String flagEmail(
-            @ToolArg(description = "Account name, e.g. 'work' or 'gmail'") String account,
-            @ToolArg(description = "Folder name, e.g. INBOX") String folder,
-            @ToolArg(description = "UID(s) to flag. Single UID or comma-separated, e.g. '1234,5678,9012'") String uids,
-            @ToolArg(description = "true to flag/star, false to unflag/unstar") boolean flagged,
-            @ToolArg(description = "Optional follow-up date/time derived from the email body, e.g. '2026-03-15' or "
-                    + "'2026-03-10T14:00'. Pass empty string if no date applies.") String followUpDate) {
-        try {
-            var uidList = parseUids(uids);
-            if (uidList.isEmpty()) return "No valid UIDs provided.";
-            int count = emailService.flagEmails(account, folder, uidList, flagged);
-            var action = flagged ? "Flagged" : "Unflagged";
-            var result = action + " " + count + " message(s) in " + folder;
-            if (followUpDate != null && !followUpDate.isBlank()) {
-                result += " (follow-up by: " + followUpDate.trim() + ")";
-            }
-            return result;
-        } catch (Exception e) {
-            return "Error flagging email: " + e.getMessage();
-        }
-    }
-
-    @Tool(description = "Correct the answered/forwarded flags on an email. Use this when triage reveals that a "
-            + "flag is missing (e.g. a reply was sent but \\Answered is not set, or a forward was done but "
-            + "$Forwarded is not set). Pass empty string for flags you don't want to change. "
+    @Tool(description = "Set one or more IMAP flags on an email. Each flag is independent — only flags you specify "
+            + "are changed, all others are left untouched. Pass empty string for flags you don't want to change. "
+            + "Available flags: seen (read/unread), answered (\\Answered), forwarded ($Forwarded), "
+            + "flagged (\\Flagged — shows as starred in Gmail, flagged in Thunderbird/Outlook). "
+            + "Use this during triage to star actionable emails, correct missing replied/forwarded flags, "
+            + "or mark emails as read/unread. "
             + "Call listAccounts first to discover available accounts.")
     String setEmailFlags(
             @ToolArg(description = "Account name, e.g. 'work' or 'gmail'") String account,
             @ToolArg(description = "Folder name, e.g. INBOX") String folder,
             @ToolArg(description = "UID of the email") long uid,
+            @ToolArg(description = "Set seen (read) flag: 'true', 'false', or empty string to leave unchanged") String seen,
             @ToolArg(description = "Set answered flag: 'true', 'false', or empty string to leave unchanged") String answered,
-            @ToolArg(description = "Set forwarded flag: 'true', 'false', or empty string to leave unchanged") String forwarded) {
+            @ToolArg(description = "Set forwarded flag: 'true', 'false', or empty string to leave unchanged") String forwarded,
+            @ToolArg(description = "Set flagged/starred flag: 'true', 'false', or empty string to leave unchanged") String flagged) {
         try {
+            Boolean seenVal = seen != null && !seen.isBlank() ? Boolean.parseBoolean(seen) : null;
             Boolean answeredVal = answered != null && !answered.isBlank() ? Boolean.parseBoolean(answered) : null;
             Boolean forwardedVal = forwarded != null && !forwarded.isBlank() ? Boolean.parseBoolean(forwarded) : null;
-            if (answeredVal == null && forwardedVal == null) return "No flags to change.";
-            emailService.setMessageFlags(account, folder, uid, answeredVal, forwardedVal);
+            Boolean flaggedVal = flagged != null && !flagged.isBlank() ? Boolean.parseBoolean(flagged) : null;
+            if (seenVal == null && answeredVal == null && forwardedVal == null && flaggedVal == null) {
+                return "No flags to change.";
+            }
+            emailService.setMessageFlags(account, folder, uid, seenVal, answeredVal, forwardedVal, flaggedVal);
             var sb = new StringBuilder("UID " + uid + " in " + folder + ": ");
-            if (answeredVal != null) sb.append("answered=").append(answeredVal);
-            if (answeredVal != null && forwardedVal != null) sb.append(", ");
-            if (forwardedVal != null) sb.append("forwarded=").append(forwardedVal);
+            var parts = new java.util.ArrayList<String>();
+            if (seenVal != null) parts.add("seen=" + seenVal);
+            if (answeredVal != null) parts.add("answered=" + answeredVal);
+            if (forwardedVal != null) parts.add("forwarded=" + forwardedVal);
+            if (flaggedVal != null) parts.add("flagged=" + flaggedVal);
+            sb.append(String.join(", ", parts));
             return sb.toString();
         } catch (Exception e) {
             return "Error setting flags: " + e.getMessage();
