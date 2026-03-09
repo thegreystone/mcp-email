@@ -628,16 +628,23 @@ public class EmailService {
         return message;
     }
 
-    public void sendEmail(String account, String to, String subject, String body) throws MessagingException {
+    public void sendEmail(String account, String to, String cc, String bcc,
+                          String subject, String body) throws MessagingException {
         var message = buildSmtpMessage(account);
         message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
+        if (cc != null) {
+            message.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
+        }
+        if (bcc != null) {
+            message.setRecipients(Message.RecipientType.BCC, InternetAddress.parse(bcc));
+        }
         message.setSubject(subject);
         message.setText(body);
         Transport.send(message);
     }
 
-    public void replyEmail(String account, String folderName, long uid, String body, boolean replyAll)
-            throws MessagingException {
+    public void replyEmail(String account, String folderName, long uid, String body, boolean replyAll,
+                           String extraCc, String extraBcc) throws MessagingException {
         var ac = getAccountConfig(account);
         var store = getImapStore(account);
         var folder = store.getFolder(folderName);
@@ -697,6 +704,14 @@ public class EmailService {
                 if (!ccList.isEmpty()) {
                     reply.setRecipients(Message.RecipientType.CC, ccList.toArray(new Address[0]));
                 }
+            }
+
+            // Extra CC/BCC — addRecipients merges with any existing CC from reply-all
+            if (extraCc != null) {
+                reply.addRecipients(Message.RecipientType.CC, InternetAddress.parse(extraCc));
+            }
+            if (extraBcc != null) {
+                reply.addRecipients(Message.RecipientType.BCC, InternetAddress.parse(extraBcc));
             }
 
             reply.setText(body);

@@ -369,10 +369,15 @@ public class EmailTools {
     String sendEmail(
             @ToolArg(description = "Account name, e.g. 'work' or 'gmail'") String account,
             @ToolArg(description = "Recipient email address") String to,
+            @ToolArg(description = "CC recipients (comma-separated, empty string if none)") String cc,
+            @ToolArg(description = "BCC recipients (comma-separated, empty string if none)") String bcc,
             @ToolArg(description = "Email subject") String subject,
             @ToolArg(description = "Email body (plain text)") String body) {
         try {
-            emailService.sendEmail(account, to, subject, body);
+            emailService.sendEmail(account, to,
+                    cc != null && !cc.isBlank() ? cc : null,
+                    bcc != null && !bcc.isBlank() ? bcc : null,
+                    subject, body);
             return "Email sent to " + to;
         } catch (Exception e) {
             return "Error sending email: " + e.getMessage();
@@ -582,9 +587,13 @@ public class EmailTools {
             @ToolArg(description = "Folder containing the original email, e.g. INBOX") String folder,
             @ToolArg(description = "UID of the email to reply to") long uid,
             @ToolArg(description = "Reply body (plain text)") String body,
-            @ToolArg(description = "true to reply to all recipients, false to reply only to sender") boolean replyAll) {
+            @ToolArg(description = "true to reply to all recipients, false to reply only to sender") boolean replyAll,
+            @ToolArg(description = "Extra CC recipients (comma-separated, empty string if none). Merged with reply-all CCs.") String cc,
+            @ToolArg(description = "BCC recipients (comma-separated, empty string if none)") String bcc) {
         try {
-            emailService.replyEmail(account, folder, uid, body, replyAll);
+            emailService.replyEmail(account, folder, uid, body, replyAll,
+                    cc != null && !cc.isBlank() ? cc : null,
+                    bcc != null && !bcc.isBlank() ? bcc : null);
             return "Reply sent" + (replyAll ? " to all" : "") + " for UID " + uid + " in " + folder;
         } catch (Exception e) {
             return "Error replying: " + e.getMessage();
