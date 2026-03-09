@@ -4,6 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/thegreystone/mcp-email)](https://github.com/thegreystone/mcp-email/releases/latest)
 [![Java 21+](https://img.shields.io/badge/Java-21%2B-blue)](https://adoptium.net/)
 [![Quarkus](https://img.shields.io/badge/Quarkus-3.21-blueviolet)](https://quarkus.io/)
+[![GraalVM Native](https://img.shields.io/badge/GraalVM-native--image-orange)](https://www.graalvm.org/)
 [![License: BSD-3](https://img.shields.io/badge/License-BSD--3-green)](https://opensource.org/licenses/BSD-3-Clause)
 
 An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/) that exposes common email operations as tools for LLM clients like Claude. Supports multiple named email accounts (e.g., work + Gmail) from a single server instance.
@@ -15,6 +16,7 @@ An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/)
 | Tool | Description |
 |------|-------------|
 | **Discovery** | |
+| `getVersion` | Returns the server version |
 | `listAccounts` | List configured account names (call first to discover accounts) |
 | `listFolders` | List all mail folders (INBOX, Sent, Drafts, etc.) |
 | `listFolderTree` | Full folder hierarchy with message/unread counts |
@@ -52,11 +54,26 @@ All tools (except `listAccounts`) require an `account` parameter — the name of
 
 ## Quick Start
 
-The fastest way to get started is to download a pre-built release:
+The fastest way to get started is to download a pre-built release from the [Releases page](https://github.com/thegreystone/mcp-email/releases/latest). Two options are available:
 
-1. Install [Java 21+](https://adoptium.net/) if you don't already have it.
-2. Download the latest `mcp-email-server-<version>-runner.jar` from the [Releases page](https://github.com/thegreystone/mcp-email/releases/latest).
-3. Configure your MCP client (see [Claude Desktop](#setting-up-with-claude-desktop) or [Claude Code](#setting-up-with-claude-code) below).
+### Option A: Native Binary (recommended)
+
+No Java installation required. Download the binary for your platform:
+
+| Platform | File |
+|----------|------|
+| Linux x86_64 | `mcp-email-server-<version>-linux-x86_64` |
+| Linux aarch64 | `mcp-email-server-<version>-linux-aarch64` |
+| macOS Apple Silicon | `mcp-email-server-<version>-macos-aarch64` |
+| Windows x86_64 | `mcp-email-server-<version>-windows-x86_64.exe` |
+
+On Linux, make the binary executable: `chmod +x mcp-email-server-*-linux-*`
+
+### Option B: Uber-jar
+
+Runs on any platform with [Java 21+](https://adoptium.net/) installed. Download `mcp-email-server-<version>-runner.jar`.
+
+Then configure your MCP client (see [Claude Desktop](#setting-up-with-claude-desktop) or [Claude Code](#setting-up-with-claude-code) below).
 
 ## Configuration
 
@@ -86,13 +103,46 @@ You can define as many accounts as needed. For example, to add a `work` and `gma
 
 ## Setting up with Claude Desktop
 
-1. Download the jar (see [Quick Start](#quick-start)) or [build from source](#building-from-source).
+1. Download a release (see [Quick Start](#quick-start)) or [build from source](#building-from-source).
 
 2. Edit the Claude Desktop config file `claude_desktop_config.json`.
    On Windows it is located at `C:\Users\<UserName>\AppData\Roaming\Claude\claude_desktop_config.json`.
    On macOS it is at `~/Library/Application Support/Claude/claude_desktop_config.json`.
 
 3. Add the `email` entry to the `mcpServers` section. Here is an example with two accounts (`work` and `gmail`):
+
+**Using the native binary (Windows):**
+
+```json
+{
+  "mcpServers": {
+    "email": {
+      "command": "C:\\Users\\YourName\\path\\to\\mcp-email-server-windows-x86_64.exe",
+      "args": [
+        "-Dquarkus.mcp.server.stdio.enabled=true",
+        "-Dquarkus.config.locations=.",
+        "-Duser.dir=C:\\Users\\YourName\\claude"
+      ],
+      "env": {
+        "EMAIL_ACCOUNTS_WORK_IMAP_HOST": "imap.example.com",
+        "EMAIL_ACCOUNTS_WORK_IMAP_USERNAME": "user@example.com",
+        "EMAIL_ACCOUNTS_WORK_IMAP_PASSWORD": "your-app-password",
+        "EMAIL_ACCOUNTS_WORK_SMTP_HOST": "smtp.example.com",
+        "EMAIL_ACCOUNTS_WORK_SMTP_USERNAME": "user@example.com",
+        "EMAIL_ACCOUNTS_WORK_SMTP_PASSWORD": "your-app-password",
+        "EMAIL_ACCOUNTS_GMAIL_IMAP_HOST": "imap.gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_IMAP_USERNAME": "you@gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_IMAP_PASSWORD": "your-gmail-app-password",
+        "EMAIL_ACCOUNTS_GMAIL_SMTP_HOST": "smtp.gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_SMTP_USERNAME": "you@gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_SMTP_PASSWORD": "your-gmail-app-password"
+      }
+    }
+  }
+}
+```
+
+**Using the uber-jar:**
 
 ```json
 {
@@ -104,7 +154,7 @@ You can define as many accounts as needed. For example, to add a `work` and `gma
         "-Dquarkus.config.locations=.",
         "-Duser.dir=C:\\Users\\YourName\\claude",
         "-jar",
-        "C:\\Users\\YourName\\path\\to\\mcp-email-server-1.0.1-runner.jar"
+        "C:\\Users\\YourName\\path\\to\\mcp-email-server-runner.jar"
       ],
       "env": {
         "EMAIL_ACCOUNTS_WORK_IMAP_HOST": "imap.example.com",
@@ -129,9 +179,40 @@ You can define as many accounts as needed. For example, to add a `work` and `gma
 
 ## Setting up with Claude Code
 
-1. Download the jar (see [Quick Start](#quick-start)) or [build from source](#building-from-source).
+1. Download a release (see [Quick Start](#quick-start)) or [build from source](#building-from-source).
 
 2. Edit `~/.claude.json` and add an `mcpServers` section. Here is an example with two accounts (`work` and `gmail`):
+
+**Using the native binary (Linux):**
+
+```json
+{
+  "mcpServers": {
+    "email": {
+      "command": "/path/to/mcp-email-server-linux-x86_64",
+      "args": [
+        "-Dquarkus.mcp.server.stdio.enabled=true"
+      ],
+      "env": {
+        "EMAIL_ACCOUNTS_WORK_IMAP_HOST": "imap.example.com",
+        "EMAIL_ACCOUNTS_WORK_IMAP_USERNAME": "user@example.com",
+        "EMAIL_ACCOUNTS_WORK_IMAP_PASSWORD": "your-app-password",
+        "EMAIL_ACCOUNTS_WORK_SMTP_HOST": "smtp.example.com",
+        "EMAIL_ACCOUNTS_WORK_SMTP_USERNAME": "user@example.com",
+        "EMAIL_ACCOUNTS_WORK_SMTP_PASSWORD": "your-app-password",
+        "EMAIL_ACCOUNTS_GMAIL_IMAP_HOST": "imap.gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_IMAP_USERNAME": "you@gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_IMAP_PASSWORD": "your-gmail-app-password",
+        "EMAIL_ACCOUNTS_GMAIL_SMTP_HOST": "smtp.gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_SMTP_USERNAME": "you@gmail.com",
+        "EMAIL_ACCOUNTS_GMAIL_SMTP_PASSWORD": "your-gmail-app-password"
+      }
+    }
+  }
+}
+```
+
+**Using the uber-jar:**
 
 ```json
 {
@@ -141,7 +222,7 @@ You can define as many accounts as needed. For example, to add a `work` and `gma
       "args": [
         "-Dquarkus.mcp.server.stdio.enabled=true",
         "-jar",
-        "/path/to/mcp-email-server-1.0.1-runner.jar"
+        "/path/to/mcp-email-server-runner.jar"
       ],
       "env": {
         "EMAIL_ACCOUNTS_WORK_IMAP_HOST": "imap.example.com",
@@ -170,6 +251,8 @@ You can define as many accounts as needed. For example, to add a `work` and `gma
 
 Only needed if you want to contribute or run a development build.
 
+### Uber-jar
+
 **Prerequisites:** Java 21+ and Maven 3.9+
 
 ```bash
@@ -177,6 +260,16 @@ mvn package
 ```
 
 The uber-jar will be at `target/mcp-email-server-<version>-runner.jar`.
+
+### Native image
+
+**Prerequisites:** [GraalVM 21+](https://www.graalvm.org/downloads/) with `native-image`, and Maven 3.9+. On Windows, Visual Studio 2022 with the "Desktop development with C++" workload is also required.
+
+```bash
+mvn package -Dnative -DskipTests
+```
+
+The native binary will be at `target/mcp-email-server-<version>-runner` (or `.exe` on Windows).
 
 ## Troubleshooting
 

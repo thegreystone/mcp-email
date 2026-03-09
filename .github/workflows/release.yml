@@ -9,9 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # ── Uber-jar (platform-independent) ──────────────────────────────────
+  uber-jar:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -25,11 +25,94 @@ jobs:
       - name: Set version from tag
         run: mvn -B versions:set -DnewVersion="${GITHUB_REF_NAME#v}" -DgenerateBackupPoms=false
 
-      - name: Build and test
+      - name: Build uber-jar
         run: mvn -B package
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uber-jar
+          path: target/mcp-email-server-*-runner.jar
+
+  # ── Native images ────────────────────────────────────────────────────
+  native:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+            suffix: linux-x86_64
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+            suffix: linux-aarch64
+          - os: macos-latest
+            arch: aarch64
+            suffix: macos-aarch64
+          - os: windows-latest
+            arch: x86_64
+            suffix: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set version from tag (Unix)
+        if: runner.os != 'Windows'
+        run: mvn -B versions:set -DnewVersion="${GITHUB_REF_NAME#v}" -DgenerateBackupPoms=false
+
+      - name: Set version from tag (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: mvn -B versions:set -DnewVersion="${GITHUB_REF_NAME#v}" -DgenerateBackupPoms=false
+
+      - name: Build native image
+        run: mvn -B package -Dnative -DskipTests
+
+      - name: Rename binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mv target/mcp-email-server-${VERSION}-runner \
+             target/mcp-email-server-${VERSION}-${{ matrix.suffix }}
+
+      - name: Rename binary (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mv target/mcp-email-server-${VERSION}-runner.exe \
+             target/mcp-email-server-${VERSION}-${{ matrix.suffix }}.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.suffix }}
+          path: |
+            target/mcp-email-server-*-${{ matrix.suffix }}
+            target/mcp-email-server-*-${{ matrix.suffix }}.exe
+
+  # ── Create GitHub release with all artifacts ─────────────────────────
+  release:
+    needs: [uber-jar, native]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts -type f | sort
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: target/mcp-email-server-*-runner.jar
+          files: artifacts/*
