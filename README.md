@@ -270,7 +270,7 @@ The uber-jar will be at `target/mcp-email-server-<version>-runner.jar`.
 
 ### Native image
 
-**Prerequisites:** [GraalVM 21+](https://www.graalvm.org/downloads/) with `native-image`, and Maven 3.9+. On Windows, Visual Studio 2022 with the "Desktop development with C++" workload is also required.
+**Prerequisites:** [GraalVM 25](https://www.graalvm.org/downloads/) with `native-image`, and Maven 3.9+. On Windows, Visual Studio 2022 with the "Desktop development with C++" workload is also required.
 
 ```bash
 mvn package -Dnative -DskipTests
