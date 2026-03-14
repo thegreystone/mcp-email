@@ -11,6 +11,8 @@ An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/)
 
 **WARNING:** This server performs real operations on your mailbox — moving, deleting, and sending emails. Always ensure you have a backup of your Maildir / emails before use. The author assumes no responsibility for any loss of data or unintended consequences resulting from the use of this MCP server. Use at your own risk.
 
+**NOTE:** That said, the author has been using this daily for months without issues.
+
 ## Features / Tools
 
 | Tool | Description |
