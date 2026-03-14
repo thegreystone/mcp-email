@@ -24,6 +24,8 @@ An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/)
 | **Reading** | |
 | `listEmails` | List emails in a folder with pagination |
 | `readEmail` | Read the full content of a specific email |
+| `getAttachment` | Download an email attachment by name. Images are returned directly; PDFs are converted to extracted text; other types as base64 blobs |
+| `selfTestPdf` | Diagnostic: verify PDF text extraction works in this environment |
 | `searchEmails` | Search by subject, sender, or body |
 | `getUnreadCount` | Count unread emails in a folder |
 | `getNextUnreadEmail` | Get oldest unread email with all headers |

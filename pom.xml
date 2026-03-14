@@ -45,6 +45,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
         <quarkus.platform.version>3.21.3</quarkus.platform.version>
         <quarkus-mcp-server.version>1.10.2</quarkus-mcp-server.version>
         <surefire-plugin.version>3.5.2</surefire-plugin.version>
+        <itext.version>7.2.5</itext.version>
     </properties>
 
     <dependencyManagement>
@@ -77,6 +78,18 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
             <artifactId>angus-mail</artifactId>
             <version>2.0.3</version>
         </dependency>
+
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>kernel</artifactId>
+            <version>${itext.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>layout</artifactId>
+            <version>${itext.version}</version>
+        </dependency>
+
 
         <dependency>
             <groupId>io.quarkus</groupId>

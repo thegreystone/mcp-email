@@ -118,6 +118,57 @@ class NativeImageSanityIT {
         }
     }
 
+    @Test
+    @EnabledIfSystemProperty(named = "native.image.path", matches = ".+")
+    void nativeBinaryPdfExtractionWorks() throws Exception {
+        String binaryPath = System.getProperty("native.image.path");
+        Path binary = Path.of(binaryPath);
+        assertTrue(Files.exists(binary), "Native binary not found at: " + binaryPath);
+
+        ProcessBuilder pb = new ProcessBuilder(
+                binary.toAbsolutePath().toString(),
+                "-Dquarkus.mcp.server.stdio.enabled=true"
+        );
+        pb.redirectErrorStream(false);
+        Process process = pb.start();
+
+        try {
+            OutputStream stdin = process.getOutputStream();
+            InputStream stdout = process.getInputStream();
+
+            // MCP initialize handshake
+            String initRequest = "{\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\","
+                    + "\"capabilities\":{},\"clientInfo\":{\"name\":\"sanity-test\",\"version\":\"1.0\"}},"
+                    + "\"jsonrpc\":\"2.0\",\"id\":0}\n";
+            stdin.write(initRequest.getBytes(StandardCharsets.UTF_8));
+            stdin.flush();
+
+            String initResponse = readResponse(stdout, 10_000);
+            assertNotNull(initResponse, "No response from native binary for initialize");
+
+            String initialized = "{\"method\":\"notifications/initialized\",\"jsonrpc\":\"2.0\"}\n";
+            stdin.write(initialized.getBytes(StandardCharsets.UTF_8));
+            stdin.flush();
+
+            // Call selfTestPdf — creates a PDF in memory and extracts text using iText
+            String selfTestRequest = "{\"method\":\"tools/call\",\"params\":{\"name\":\"selfTestPdf\",\"arguments\":{}},"
+                    + "\"jsonrpc\":\"2.0\",\"id\":3}\n";
+            stdin.write(selfTestRequest.getBytes(StandardCharsets.UTF_8));
+            stdin.flush();
+
+            String selfTestResponse = readResponse(stdout, 15_000);
+            assertNotNull(selfTestResponse, "No response from native binary for selfTestPdf");
+            assertTrue(selfTestResponse.contains("PASSED"),
+                    "PDF self-test should pass in native image: " + selfTestResponse);
+            assertTrue(selfTestResponse.contains("Hello from mcp-email-server"),
+                    "PDF self-test should contain expected text: " + selfTestResponse);
+
+        } finally {
+            process.destroyForcibly();
+            process.waitFor();
+        }
+    }
+
     /**
      * Reads a single JSON-RPC response line from the process stdout,
      * with a timeout to avoid hanging forever.

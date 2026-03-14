@@ -433,6 +433,52 @@ public class EmailService {
         return null;
     }
 
+    public record AttachmentContent(String fileName, String mimeType, byte[] data) {}
+
+    public AttachmentContent getAttachment(String account, String folderName, long uid, String attachmentName)
+            throws MessagingException, IOException {
+        var store = getImapStore(account);
+        var folder = store.getFolder(folderName);
+        folder.open(Folder.READ_ONLY);
+        try {
+            var uf = (UIDFolder) folder;
+            var message = uf.getMessageByUID(uid);
+            if (message == null) throw new MessagingException("No message with UID " + uid);
+
+            var part = findAttachment(message, attachmentName);
+            if (part == null) {
+                throw new MessagingException("Attachment not found: " + attachmentName
+                        + ". Use readEmail to see available attachment names.");
+            }
+
+            var data = part.getInputStream().readAllBytes();
+            var mimeType = part.getContentType();
+            if (mimeType != null && mimeType.contains(";")) {
+                mimeType = mimeType.substring(0, mimeType.indexOf(';')).trim();
+            }
+            return new AttachmentContent(attachmentName, mimeType != null ? mimeType : "application/octet-stream", data);
+        } finally {
+            folder.close(false);
+        }
+    }
+
+    private Part findAttachment(Part part, String name) throws MessagingException, IOException {
+        if (part.isMimeType("multipart/*")) {
+            var mp = (Multipart) part.getContent();
+            for (int i = 0; i < mp.getCount(); i++) {
+                var bp = mp.getBodyPart(i);
+                if (Part.ATTACHMENT.equalsIgnoreCase(bp.getDisposition()) && name.equals(bp.getFileName())) {
+                    return bp;
+                }
+                var found = findAttachment(bp, name);
+                if (found != null) return found;
+            }
+        } else if (part.isMimeType("message/rfc822")) {
+            return findAttachment((Part) part.getContent(), name);
+        }
+        return null;
+    }
+
     private List<String> extractAttachmentNames(Part part) throws MessagingException, IOException {
         var names = new ArrayList<String>();
         if (part.isMimeType("multipart/*")) {
