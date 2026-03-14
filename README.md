@@ -7,7 +7,13 @@
 [![GraalVM Native](https://img.shields.io/badge/GraalVM-native--image-orange)](https://www.graalvm.org/)
 [![License: BSD-3](https://img.shields.io/badge/License-BSD--3-green)](https://opensource.org/licenses/BSD-3-Clause)
 
-An MCP (Model Context Protocol) server built with [Quarkus](https://quarkus.io/) that exposes common email operations as tools for LLM clients like Claude. Supports multiple named email accounts (e.g., work + Gmail) from a single server instance.
+An MCP (Model Context Protocol) server that exposes common email operations as tools for LLM clients like Claude. Supports multiple named email accounts (e.g., work + Gmail) from a single server instance.
+
+### Example prompts
+
+> "Find the tax emails from Pestalozzi for 2025, and check the content to fully understand what documentation I need to provide. Please provide an action plan to get that documentation."
+
+> "Please help triage the emails in my inboxes. As per usual, flag anything that is actionable. Don't hesitate to read emails that you are uncertain about. For anything actionable, provide an action plan. For anything non-actionable, file according to the folder layout."
 
 **WARNING:** This server performs real operations on your mailbox — moving, deleting, and sending emails. Always ensure you have a backup of your Maildir / emails before use. The author assumes no responsibility for any loss of data or unintended consequences resulting from the use of this MCP server. Use at your own risk.
 
