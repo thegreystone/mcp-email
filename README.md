@@ -17,7 +17,7 @@ An MCP (Model Context Protocol) server that exposes common email operations as t
 
 **WARNING:** This server performs real operations on your mailbox — moving, deleting, and sending emails. Always ensure you have a backup of your Maildir / emails before use. The author assumes no responsibility for any loss of data or unintended consequences resulting from the use of this MCP server. Use at your own risk.
 
-**NOTE:** That said, the author has been using this daily for months without issues.
+**NOTE:** That said, the author has been using this daily for weeks without issues.
 
 ## Features / Tools
 
@@ -270,7 +270,7 @@ The uber-jar will be at `target/mcp-email-server-<version>-runner.jar`.
 
 ### Native image
 
-**Prerequisites:** [GraalVM 21+](https://www.graalvm.org/downloads/) with `native-image`, and Maven 3.9+. On Windows, Visual Studio 2022 with the "Desktop development with C++" workload is also required.
+**Prerequisites:** [GraalVM 25](https://www.graalvm.org/downloads/) with `native-image`, and Maven 3.9+. On Windows, Visual Studio 2022 with the "Desktop development with C++" workload is also required.
 
 ```bash
 mvn package -Dnative -DskipTests
