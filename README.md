@@ -11,7 +11,7 @@ An MCP (Model Context Protocol) server that exposes common email operations as t
 
 ### Example prompts
 
-> "Find the tax emails from Pestalozzi for 2025, and check the content to fully understand what documentation I need to provide. Please provide an action plan to get that documentation."
+> "Find the tax emails from my tax lawyers for 2025, and check the content and attachments to fully understand what documentation I need to provide. Please provide an action plan to get that documentation."
 
 > "Please help triage the emails in my inboxes. As per usual, flag anything that is actionable. Don't hesitate to read emails that you are uncertain about. For anything actionable, provide an action plan. For anything non-actionable, file according to the folder layout."
 
