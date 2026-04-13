@@ -38,6 +38,10 @@ import io.quarkiverse.mcp.server.ImageContent;
 import io.quarkiverse.mcp.server.TextContent;
 import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Element;
+import org.jsoup.nodes.Node;
+import org.jsoup.nodes.TextNode;
 import io.quarkiverse.mcp.server.ToolResponse;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -49,6 +53,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public class EmailTools {
 
@@ -183,7 +188,8 @@ public class EmailTools {
     String readEmail(
             @ToolArg(description = "Account name, e.g. 'work' or 'gmail'") String account,
             @ToolArg(description = "Folder name, e.g. INBOX") String folder,
-            @ToolArg(description = "Email UID (from listEmails, triageUnread, etc.)") long uid) {
+            @ToolArg(description = "Email UID (from listEmails, triageUnread, etc.)") long uid,
+            @ToolArg(description = "Set to false to return raw HTML instead of converting to markdown (default: true)") Optional<Boolean> htmlToMarkdown) {
         try {
             var email = emailService.readEmail(account, folder, uid);
             var sb = new StringBuilder();
@@ -198,10 +204,142 @@ public class EmailTools {
             if (!email.attachments().isEmpty()) {
                 sb.append("Attachments: ").append(String.join(", ", email.attachments())).append("\n");
             }
-            sb.append("\n").append(email.body() != null ? email.body() : "(no body)");
+            var body = email.body();
+            if (body != null && htmlToMarkdown.orElse(true)) {
+                if (email.html()) {
+                    body = htmlToMarkdown(body);
+                } else {
+                    body = stripZeroWidthChars(body);
+                }
+            }
+            sb.append("\n").append(body != null ? body : "(no body)");
             return sb.toString();
         } catch (Exception e) {
             return "Error reading email: " + e.getMessage();
+        }
+    }
+
+    private static String stripZeroWidthChars(String text) {
+        return text.replaceAll(ZERO_WIDTH_CHARS, "")
+                .replace('\u00A0', ' ')
+                .replaceAll("[\\t ]+\n", "\n")
+                .replaceAll("\\n{3,}", "\n\n")
+                .trim();
+    }
+
+    private static String htmlToMarkdown(String html) {
+        var doc = Jsoup.parse(html);
+        var sb = new StringBuilder();
+        convertNode(doc.body(), sb);
+        return sb.toString()
+                .replaceAll("\\[\\s*\\]", "")
+                .replaceAll("[\\t ]+\n", "\n")
+                .replaceAll("\\n{3,}", "\n\n")
+                .trim();
+    }
+
+    private static final String ZERO_WIDTH_CHARS = "[\u200B\u200C\u200D\u034F\uFEFF\u00AD\u2060\u2061\u2062\u2063\u2064]";
+
+    private static void convertNode(Node node, StringBuilder sb) {
+        if (node instanceof TextNode textNode) {
+            String text = textNode.getWholeText()
+                    .replaceAll(ZERO_WIDTH_CHARS, "")
+                    .replace('\u00A0', ' ')
+                    .replaceAll("[ \\t]+", " ");
+            if (!text.isBlank()) {
+                sb.append(text);
+            }
+            return;
+        }
+        if (!(node instanceof Element el)) {
+            return;
+        }
+        String tag = el.tagName();
+        switch (tag) {
+            case "br" -> sb.append("\n");
+            case "hr" -> sb.append("\n---\n");
+            case "h1", "h2", "h3", "h4", "h5", "h6" -> {
+                sb.append("\n");
+                sb.append("#".repeat(tag.charAt(1) - '0')).append(" ");
+                convertChildren(el, sb);
+                sb.append("\n");
+            }
+            case "strong", "b" -> {
+                sb.append("**");
+                convertChildren(el, sb);
+                sb.append("**");
+            }
+            case "em", "i" -> {
+                sb.append("*");
+                convertChildren(el, sb);
+                sb.append("*");
+            }
+            case "a" -> {
+                String href = el.attr("href");
+                if (href.isEmpty() || href.startsWith("javascript:")) {
+                    convertChildren(el, sb);
+                } else {
+                    var linkText = new StringBuilder();
+                    convertChildren(el, linkText);
+                    String text = linkText.toString().replaceAll("\\s+", " ").trim();
+                    if (text.isEmpty() || "[]".equals(text)) {
+                        // Skip links with no visible text (e.g. tracking pixels)
+                    } else {
+                        sb.append("[").append(text).append("](").append(href).append(")");
+                    }
+                }
+            }
+            case "ul", "ol" -> {
+                sb.append("\n");
+                var items = el.children();
+                for (int i = 0; i < items.size(); i++) {
+                    var li = items.get(i);
+                    if ("li".equals(li.tagName())) {
+                        sb.append("ul".equals(tag) ? "- " : (i + 1) + ". ");
+                        convertChildren(li, sb);
+                        sb.append("\n");
+                    }
+                }
+            }
+            case "blockquote" -> {
+                var content = new StringBuilder();
+                convertChildren(el, content);
+                for (String line : content.toString().split("\n")) {
+                    sb.append("> ").append(line).append("\n");
+                }
+            }
+            case "p", "div", "section", "article", "header", "footer" -> {
+                var blockContent = new StringBuilder();
+                convertChildren(el, blockContent);
+                String blockText = blockContent.toString().trim();
+                if (!blockText.isEmpty()) {
+                    sb.append("\n").append(blockText).append("\n");
+                }
+            }
+            case "tr" -> {
+                var rowContent = new StringBuilder();
+                convertChildren(el, rowContent);
+                String rowText = rowContent.toString().trim();
+                if (!rowText.isEmpty()) {
+                    sb.append(rowText).append("\n");
+                }
+            }
+            case "td", "th" -> {
+                var cellContent = new StringBuilder();
+                convertChildren(el, cellContent);
+                String cellText = cellContent.toString().trim();
+                if (!cellText.isEmpty()) {
+                    sb.append(cellText).append(" ");
+                }
+            }
+            case "img", "style", "script", "link", "meta", "title" -> { /* skip */ }
+            default -> convertChildren(el, sb);
+        }
+    }
+
+    private static void convertChildren(Node node, StringBuilder sb) {
+        for (Node child : node.childNodes()) {
+            convertNode(child, sb);
         }
     }
 

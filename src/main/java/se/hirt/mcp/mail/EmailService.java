@@ -369,7 +369,7 @@ public class EmailService {
 
     public record EmailContent(String subject, String from, String to, String date,
                                boolean seen, boolean answered, boolean forwarded,
-                               String body, List<String> attachments) {}
+                               String body, boolean html, List<String> attachments) {}
 
     public EmailContent readEmail(String account, String folderName, long uid)
             throws MessagingException, IOException {
@@ -387,36 +387,40 @@ public class EmailService {
             var date = message.getSentDate() != null ? message.getSentDate().toString() : "(no date)";
             boolean seen = message.isSet(Flags.Flag.SEEN);
 
-            var body = extractText(message);
+            var extracted = extractText(message);
+            var body = extracted != null ? extracted.text() : null;
+            boolean isHtml = extracted != null && extracted.html();
             var attachments = extractAttachmentNames(message);
 
             boolean answered = message.isSet(Flags.Flag.ANSWERED);
             boolean forwarded = isForwarded(message);
-            return new EmailContent(message.getSubject(), from, to, date, seen, answered, forwarded, body, attachments);
+            return new EmailContent(message.getSubject(), from, to, date, seen, answered, forwarded, body, isHtml, attachments);
         } finally {
             folder.close(false);
         }
     }
 
-    private String extractText(Part part) throws MessagingException, IOException {
+    private record ExtractedText(String text, boolean html) {}
+
+    private ExtractedText extractText(Part part) throws MessagingException, IOException {
         if (part.isMimeType("text/plain")) {
-            return (String) part.getContent();
+            return new ExtractedText((String) part.getContent(), false);
         }
         if (part.isMimeType("text/html")) {
-            return "[HTML] " + part.getContent();
+            return new ExtractedText((String) part.getContent(), true);
         }
         if (part.isMimeType("message/rfc822")) {
             return extractText((Part) part.getContent());
         }
         if (part.isMimeType("multipart/alternative")) {
             var mp = (Multipart) part.getContent();
-            String fallback = null;
+            ExtractedText fallback = null;
             for (int i = 0; i < mp.getCount(); i++) {
                 var bp = mp.getBodyPart(i);
-                String text = extractText(bp);
-                if (text != null) {
-                    if (bp.isMimeType("text/plain")) return text;
-                    if (fallback == null) fallback = text;
+                var extracted = extractText(bp);
+                if (extracted != null) {
+                    if (bp.isMimeType("text/html")) return extracted;
+                    if (fallback == null) fallback = extracted;
                 }
             }
             return fallback;
@@ -424,11 +428,15 @@ public class EmailService {
         if (part.isMimeType("multipart/*")) {
             var mp = (Multipart) part.getContent();
             var parts = new ArrayList<String>();
+            boolean anyHtml = false;
             for (int i = 0; i < mp.getCount(); i++) {
-                var text = extractText(mp.getBodyPart(i));
-                if (text != null) parts.add(text);
+                var extracted = extractText(mp.getBodyPart(i));
+                if (extracted != null) {
+                    parts.add(extracted.text());
+                    if (extracted.html()) anyHtml = true;
+                }
             }
-            return parts.isEmpty() ? null : String.join("\n\n", parts);
+            return parts.isEmpty() ? null : new ExtractedText(String.join("\n\n", parts), anyHtml);
         }
         return null;
     }
@@ -1012,7 +1020,8 @@ public class EmailService {
                         (old, val) -> old + "\n" + val);
             }
 
-            var body = extractText(message);
+            var extracted2 = extractText(message);
+            var body = extracted2 != null ? extracted2.text() : null;
             var attachments = extractAttachmentNames(message);
 
             boolean answered = message.isSet(Flags.Flag.ANSWERED);
