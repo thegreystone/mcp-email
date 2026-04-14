@@ -325,9 +325,9 @@ public class EmailService {
     // ── List emails ──────────────────────────────────────────────────────
 
     public record EmailHeader(long uid, String subject, String from, String date,
-                               boolean seen, boolean answered, boolean forwarded) {}
+                               boolean seen, boolean answered, boolean forwarded, int size) {}
 
-    public List<EmailHeader> listEmails(String account, String folderName, int offset, int limit)
+    public List<EmailHeader> listEmails(String account, String folderName, int offset, int limit, String sortBy)
             throws MessagingException {
         var store = getImapStore(account);
         var folder = store.getFolder(folderName);
@@ -337,19 +337,43 @@ public class EmailService {
             int total = folder.getMessageCount();
             if (total == 0) return List.of();
 
-            int end = total - offset;
-            int start = Math.max(1, end - limit + 1);
-            if (end < 1) return List.of();
+            boolean needsFullScan = "size".equalsIgnoreCase(sortBy) || "from".equalsIgnoreCase(sortBy);
+            Message[] messages;
+            if (needsFullScan) {
+                messages = folder.getMessages(1, total);
+            } else {
+                int end = total - offset;
+                int start = Math.max(1, end - limit + 1);
+                if (end < 1) return List.of();
+                messages = folder.getMessages(start, end);
+            }
 
-            var messages = folder.getMessages(start, end);
             var fp = new FetchProfile();
             fp.add(FetchProfile.Item.ENVELOPE);
             fp.add(FetchProfile.Item.FLAGS);
+            fp.add(FetchProfile.Item.SIZE);
             fp.add(UIDFolder.FetchProfileItem.UID);
             folder.fetch(messages, fp);
 
+            if ("size".equalsIgnoreCase(sortBy)) {
+                Arrays.sort(messages, (a, b) -> {
+                    try { return Integer.compare(b.getSize(), a.getSize()); }
+                    catch (Exception e) { return 0; }
+                });
+            } else if ("from".equalsIgnoreCase(sortBy)) {
+                Arrays.sort(messages, (a, b) -> {
+                    try {
+                        var fa = a.getFrom() != null && a.getFrom().length > 0 ? a.getFrom()[0].toString() : "";
+                        var fb = b.getFrom() != null && b.getFrom().length > 0 ? b.getFrom()[0].toString() : "";
+                        return fa.compareToIgnoreCase(fb);
+                    } catch (Exception e) { return 0; }
+                });
+            }
+
             var result = new ArrayList<EmailHeader>();
-            for (int i = messages.length - 1; i >= 0; i--) {
+            int fromIdx = needsFullScan ? offset : messages.length - 1;
+            int step = needsFullScan ? 1 : -1;
+            for (int i = fromIdx; result.size() < limit && i >= 0 && i < messages.length; i += step) {
                 var m = messages[i];
                 var from = m.getFrom() != null && m.getFrom().length > 0
                         ? m.getFrom()[0].toString() : "(unknown)";
@@ -357,7 +381,7 @@ public class EmailService {
                 boolean seen = m.isSet(Flags.Flag.SEEN);
                 boolean answered = m.isSet(Flags.Flag.ANSWERED);
                 boolean forwarded = isForwarded(m);
-                result.add(new EmailHeader(uf.getUID(m), m.getSubject(), from, date, seen, answered, forwarded));
+                result.add(new EmailHeader(uf.getUID(m), m.getSubject(), from, date, seen, answered, forwarded, m.getSize()));
             }
             return result;
         } finally {
@@ -369,7 +393,7 @@ public class EmailService {
 
     public record EmailContent(String subject, String from, String to, String date,
                                boolean seen, boolean answered, boolean forwarded,
-                               String body, boolean html, List<String> attachments) {}
+                               String body, boolean html, List<String> attachments, int size) {}
 
     public EmailContent readEmail(String account, String folderName, long uid)
             throws MessagingException, IOException {
@@ -394,7 +418,7 @@ public class EmailService {
 
             boolean answered = message.isSet(Flags.Flag.ANSWERED);
             boolean forwarded = isForwarded(message);
-            return new EmailContent(message.getSubject(), from, to, date, seen, answered, forwarded, body, isHtml, attachments);
+            return new EmailContent(message.getSubject(), from, to, date, seen, answered, forwarded, body, isHtml, attachments, message.getSize());
         } finally {
             folder.close(false);
         }
@@ -635,6 +659,7 @@ public class EmailService {
             var fp = new FetchProfile();
             fp.add(FetchProfile.Item.ENVELOPE);
             fp.add(FetchProfile.Item.FLAGS);
+            fp.add(FetchProfile.Item.SIZE);
             fp.add(UIDFolder.FetchProfileItem.UID);
             folder.fetch(messages, fp);
 
@@ -648,7 +673,7 @@ public class EmailService {
                 boolean seen = m.isSet(Flags.Flag.SEEN);
                 boolean answered = m.isSet(Flags.Flag.ANSWERED);
                 boolean forwarded = isForwarded(m);
-                result.add(new EmailHeader(uf.getUID(m), m.getSubject(), from, date, seen, answered, forwarded));
+                result.add(new EmailHeader(uf.getUID(m), m.getSubject(), from, date, seen, answered, forwarded, m.getSize()));
             }
             return result;
         } finally {
@@ -834,11 +859,11 @@ public class EmailService {
             "Authentication-Results", "X-Mailer", "X-Priority");
 
     public record EmailSummary(long uid, boolean answered, boolean forwarded,
-                               Map<String, String> headers) {}
+                               Map<String, String> headers, int size) {}
 
     public record CompactEmailSummary(long uid, String from, String subject, String date,
                                       boolean answered, boolean forwarded, double spamScore,
-                                      boolean hasListUnsubscribe, boolean fromReplyToMismatch) {}
+                                      boolean hasListUnsubscribe, boolean fromReplyToMismatch, int size) {}
 
     public List<CompactEmailSummary> summarizeEmailsCompact(String account, String folderName,
                                                               boolean unreadOnly, int offset, int limit)
@@ -857,6 +882,7 @@ public class EmailService {
                 var fp = new FetchProfile();
                 fp.add(FetchProfile.Item.ENVELOPE);
                 fp.add(FetchProfile.Item.FLAGS);
+                fp.add(FetchProfile.Item.SIZE);
                 fp.add(UIDFolder.FetchProfileItem.UID);
                 folder.fetch(messages, fp);
                 Arrays.sort(messages, Comparator.comparingLong(m -> {
@@ -872,6 +898,7 @@ public class EmailService {
                 var fp = new FetchProfile();
                 fp.add(FetchProfile.Item.ENVELOPE);
                 fp.add(FetchProfile.Item.FLAGS);
+                fp.add(FetchProfile.Item.SIZE);
                 fp.add(UIDFolder.FetchProfileItem.UID);
                 folder.fetch(messages, fp);
             }
@@ -922,7 +949,7 @@ public class EmailService {
                 boolean answered = m.isSet(Flags.Flag.ANSWERED);
                 boolean forwarded = isForwarded(m);
                 result.add(new CompactEmailSummary(uf.getUID(m), from, subject, date,
-                        answered, forwarded, spamScore, hasListUnsubscribe, fromReplyToMismatch));
+                        answered, forwarded, spamScore, hasListUnsubscribe, fromReplyToMismatch, m.getSize()));
             }
             return result;
         } finally {
@@ -946,6 +973,7 @@ public class EmailService {
                 if (messages.length == 0) return List.of();
                 var fp = new FetchProfile();
                 fp.add(FetchProfile.Item.FLAGS);
+                fp.add(FetchProfile.Item.SIZE);
                 fp.add(UIDFolder.FetchProfileItem.UID);
                 folder.fetch(messages, fp);
                 Arrays.sort(messages, Comparator.comparingLong(m -> {
@@ -960,6 +988,7 @@ public class EmailService {
                 messages = folder.getMessages(start, end);
                 var fp = new FetchProfile();
                 fp.add(FetchProfile.Item.FLAGS);
+                fp.add(FetchProfile.Item.SIZE);
                 fp.add(UIDFolder.FetchProfileItem.UID);
                 folder.fetch(messages, fp);
             }
@@ -979,7 +1008,7 @@ public class EmailService {
                 }
                 boolean answered = m.isSet(Flags.Flag.ANSWERED);
                 boolean forwarded = isForwarded(m);
-                result.add(new EmailSummary(uf.getUID(m), answered, forwarded, headers));
+                result.add(new EmailSummary(uf.getUID(m), answered, forwarded, headers, m.getSize()));
             }
             return result;
         } finally {
@@ -988,7 +1017,7 @@ public class EmailService {
     }
 
     public record FullEmail(long uid, int unreadLeft, boolean answered, boolean forwarded,
-                            Map<String, String> headers, String body, List<String> attachments) {}
+                            Map<String, String> headers, String body, List<String> attachments, int size) {}
 
     public FullEmail getNextUnreadEmail(String account, String folderName)
             throws MessagingException, IOException {
@@ -1026,7 +1055,7 @@ public class EmailService {
 
             boolean answered = message.isSet(Flags.Flag.ANSWERED);
             boolean forwarded = isForwarded(message);
-            return new FullEmail(uf.getUID(message), messages.length, answered, forwarded, headers, body, attachments);
+            return new FullEmail(uf.getUID(message), messages.length, answered, forwarded, headers, body, attachments, message.getSize());
         } finally {
             folder.close(false);
         }

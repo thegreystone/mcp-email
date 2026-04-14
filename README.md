@@ -30,8 +30,8 @@ An MCP (Model Context Protocol) server that exposes common email operations as t
 | `listFolderTree` | Full folder hierarchy with message/unread counts |
 | `createFolder` | Create a new mail folder |
 | **Reading** | |
-| `listEmails` | List emails in a folder with pagination |
-| `readEmail` | Read the full content of a specific email |
+| `listEmails` | List emails in a folder with pagination. Sortable by date (default), size, or sender |
+| `readEmail` | Read the full content of a specific email. HTML bodies are converted to markdown by default |
 | `getAttachment` | Download an email attachment by name. Images are returned directly; PDFs are converted to extracted text; other types as base64 blobs |
 | `selfTestPdf` | Diagnostic: verify PDF text extraction works in this environment |
 | `searchEmails` | Search by subject, sender, or body |
