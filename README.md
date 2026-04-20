@@ -9,6 +9,8 @@
 
 An MCP (Model Context Protocol) server that exposes common email operations as tools for LLM clients like Claude. Supports multiple named email accounts (e.g., work + Gmail) from a single server instance.
 
+For more information, see my [blog](https://hirt.se/blog/?p=1596).
+
 ### Example prompts
 
 > "Find the tax emails from my tax lawyers for 2025, and check the content and attachments to fully understand what documentation I need to provide. Please provide an action plan to get that documentation."
