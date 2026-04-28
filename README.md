@@ -48,16 +48,16 @@ For more information, see my [blog](https://hirt.se/blog/?p=1596).
 | `batchMoveEmails` | Move emails to multiple target folders in one call |
 | `moveToSpam` | Move emails to the cached spam folder |
 | `setEmailFlags` | Set any combination of seen, answered, forwarded, and flagged/starred on one or more emails |
-| `deleteEmail` | Delete an email (moves to Trash by default) |
+| `deleteEmail` | Permanently delete an email. **Disabled by default** — opt in via `EMAIL_ALLOW_DELETION=true` (see [Enabling permanent deletion](#enabling-permanent-deletion)) |
 | **Spam** | |
 | `getSpamFolder` | Auto-detect and cache the spam/junk folder |
 | `setSpamFolder` | Manually override the spam folder |
 | **Composing** | |
-| `saveDraft` | Save a draft email for user review with CC/BCC (preferred over send) |
-| `sendEmail` | Send an email via SMTP with CC/BCC |
-| `replyEmail` | Reply with proper threading headers and optional CC/BCC |
-| `forwardEmail` | Verbatim forward (body never enters LLM context) |
-| `forwardEmailWithComment` | Forward with a comment prepended |
+| `saveDraft` | Save a draft email for user review with CC/BCC (always available; preferred over send) |
+| `sendEmail` | Send an email via SMTP with CC/BCC. **Disabled by default** — opt in via `EMAIL_ALLOW_SENDING=true` (see [Enabling outbound sending](#enabling-outbound-sending)) |
+| `replyEmail` | Reply with proper threading headers and optional CC/BCC. **Disabled by default** — opt in via `EMAIL_ALLOW_SENDING=true` |
+| `forwardEmail` | Verbatim forward (body never enters LLM context). **Disabled by default** — opt in via `EMAIL_ALLOW_SENDING=true` |
+| `forwardEmailWithComment` | Forward with a comment prepended. **Disabled by default** — opt in via `EMAIL_ALLOW_SENDING=true` |
 
 All tools (except `listAccounts`) require an `account` parameter — the name of the account to operate on (e.g., `work`, `gmail`).
 
@@ -109,6 +109,25 @@ Accounts are defined by convention: `EMAIL_ACCOUNTS_<NAME>_IMAP_*` and `EMAIL_AC
 For Gmail, create an [App Password](https://myaccount.google.com/apppasswords).
 
 You can define as many accounts as needed. For example, to add a `work` and `gmail` account, set environment variables for both `EMAIL_ACCOUNTS_WORK_*` and `EMAIL_ACCOUNTS_GMAIL_*`.
+
+### Safety flags — opt-in for irreversible actions
+
+Permanent and outbound operations are **opt-in** for safety. By default the destructive/outbound tools are disabled and return an explanatory error so the LLM can tell the user what's happening and fall back to a safer alternative (`moveEmail` to a Trash folder, or `saveDraft` for the user to send manually).
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `EMAIL_ALLOW_DELETION` | `false` | Set to `true` to allow `deleteEmail` to actually delete messages. |
+| `EMAIL_ALLOW_SENDING` | `false` | Set to `true` to allow `sendEmail`, `replyEmail`, `forwardEmail`, and `forwardEmailWithComment` to actually transmit messages over SMTP. |
+
+Equivalent system properties: `-Demail.allow-deletion=true` and `-Demail.allow-sending=true`. Restart the server after changing them.
+
+#### Enabling permanent deletion
+
+When `EMAIL_ALLOW_DELETION` is unset (or `false`), `deleteEmail` is still listed (so the LLM can discover it and explain the limitation), but every invocation is rejected before any IMAP call is made. Use `moveEmail` to a Trash folder as the safe alternative.
+
+#### Enabling outbound sending
+
+When `EMAIL_ALLOW_SENDING` is unset (or `false`), the four outbound tools above all return an explanatory error and do nothing. **`saveDraft` is unaffected** — it only writes to the IMAP `Drafts` folder, so the LLM can still compose messages for the user to review and send manually from their mail client. This is the recommended default workflow even when sending is enabled.
 
 ## Setting up with Claude Desktop
 
