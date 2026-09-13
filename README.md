@@ -65,6 +65,9 @@ All tools (except `listAccounts`) require an `account` parameter — the name of
 
 The fastest way to get started is to download a pre-built release from the [Releases page](https://github.com/thegreystone/mcp-email/releases/latest). Two options are available:
 
+**Claude Desktop users:** the simplest install is the MCP Bundle, `mcp-email-server-<version>-macos-aarch64.mcpb`
+or `mcp-email-server-<version>-windows-x86_64.mcpb`, see [Setting up with Claude Desktop](#setting-up-with-claude-desktop).
+
 ### Option A: Native Binary (recommended)
 
 No Java installation required. Download the binary for your platform:
@@ -76,7 +79,15 @@ No Java installation required. Download the binary for your platform:
 | macOS Apple Silicon | `mcp-email-server-<version>-macos-aarch64` |
 | Windows x86_64 | `mcp-email-server-<version>-windows-x86_64.exe` |
 
-On Linux, make the binary executable: `chmod +x mcp-email-server-*-linux-*`
+On Linux and macOS, make the binary executable: `chmod +x mcp-email-server-*`
+
+The macOS binary is signed and notarized, so Gatekeeper accepts it as downloaded. The one exception is a
+first launch while offline, because Gatekeeper fetches the notarization ticket from Apple; if that
+happens, clear the quarantine flag once:
+
+```bash
+xattr -d com.apple.quarantine mcp-email-server-<version>-macos-aarch64
+```
 
 ### Option B: Uber-jar
 
@@ -130,6 +141,19 @@ When `EMAIL_ALLOW_DELETION` is unset (or `false`), `deleteEmail` is still listed
 When `EMAIL_ALLOW_SENDING` is unset (or `false`), the four outbound tools above all return an explanatory error and do nothing. **`saveDraft` is unaffected** — it only writes to the IMAP `Drafts` folder, so the LLM can still compose messages for the user to review and send manually from their mail client. This is the recommended default workflow even when sending is enabled.
 
 ## Setting up with Claude Desktop
+
+The easiest way is the MCP Bundle. Download the `.mcpb` file for macOS or Windows from the
+[Releases page](https://github.com/thegreystone/mcp-email/releases/latest) (for example
+`mcp-email-server-1.0.12-windows-x86_64.mcpb`), then either double-click it or open it from
+*Settings → Extensions* in Claude Desktop. The extension's settings page asks for the IMAP and SMTP server,
+username and password of one account (passwords go to the operating system keychain) and has two switches,
+*Allow sending* and *Allow permanent deletion*, both off by default. No config file to edit. The account is
+called `default` in the tools. The bundle contains the same native binary as the standalone download, signed and notarized on macOS and
+Authenticode-signed on Windows, and configures a single account with the default ports; for several accounts, or other ports and SSL settings,
+use the manual route below. The bundle file itself carries no signature, so Claude Desktop shows its standard
+unsigned-extension notice before installing.
+
+If you prefer the manual route:
 
 1. Download a release (see [Quick Start](#quick-start)) or [build from source](#building-from-source).
 
@@ -299,11 +323,83 @@ mvn package -Dnative -DskipTests
 
 The native binary will be at `target/mcp-email-server-<version>-runner` (or `.exe` on Windows).
 
+### MCP Bundles
+
+Pushing a `v<version>` tag runs the release workflow, which builds the uber-jar and the four native images and
+packs an [MCP Bundle](https://github.com/anthropics/mcpb) (`.mcpb`) for macOS and Windows, the two platforms
+that have Claude Desktop. A bundle is the binary under `server/` plus a `manifest.json` filled in from
+[`mcpb/manifest.json`](mcpb/manifest.json) (`__VERSION__`, `__BINARY__` and `__PLATFORM__` are substituted).
+The manifest declares one account's IMAP and SMTP settings and the two safety switches as `user_config`,
+mapped to the `EMAIL_ACCOUNTS_DEFAULT_*`, `EMAIL_ALLOW_SENDING` and `EMAIL_ALLOW_DELETION` environment
+variables, and passes the same `-Duser.dir` and `-Dquarkus.config.locations` arguments as the Claude Desktop
+example above, with the home directory as working directory. The packing is [`mcpb/pack.sh`](mcpb/pack.sh),
+run on the runner that built the binary so the executable bit survives on macOS.
+
+The release also packs a **universal** bundle, `mcp-email-server-<version>-universal.mcpb`, with all four
+binaries and a manifest whose `platform_overrides` pick one per operating system
+([`mcpb/manifest-universal.json`](mcpb/manifest-universal.json); on Linux
+[`mcpb/linux-launcher.sh`](mcpb/linux-launcher.sh) picks the architecture). It exists for a Claude plugin
+marketplace entry, which can reference only one bundle for every platform; direct downloads should keep
+using the per-platform bundles. [`mcpb/pack-universal.sh`](mcpb/pack-universal.sh) runs on Linux only, since
+a pack done on Windows cannot set the executable bits of the Unix binaries.
+
+The manual **Bundles** workflow ([`.github/workflows/bundle.yml`](.github/workflows/bundle.yml)) builds the
+bundles for an already published release from its binaries and attaches them: run it from the Actions tab
+with the version, choosing *all*, *macos-only* or *universal*.
+
+To try a bundle locally (Git Bash on Windows):
+
+```bash
+bash mcpb/pack.sh 0.0.0 windows-x86_64 win32 target/mcp-email-server-*-runner.exe target/mcp-email-server-dev.mcpb
+```
+
+### Signing the macOS binary
+
+The macOS job signs the binary with the Apple Developer ID certificate (hardened runtime, timestamped) and
+submits it to Apple's notary service before packing the bundle, following the same recipe as
+[thegreystone/rpg-mcp](https://github.com/thegreystone/rpg-mcp) and
+[thegreystone/diskspace](https://github.com/thegreystone/diskspace). A bare executable cannot be stapled, so
+Gatekeeper fetches the notarization ticket from Apple on first run; the Quick Start keeps the `xattr` note for
+offline first runs. No entitlements are needed: the native image does not JIT and loads no unsigned dylibs.
+The job fails, and no release is created, if the secrets are missing. They are the same six as in rpg-mcp and
+diskspace and can be copied from there:
+
+| Secret                    | Value                                                                 |
+|---------------------------|-----------------------------------------------------------------------|
+| `MACOS_CERTIFICATE`       | Developer ID Application certificate + key as a base64-encoded `.p12` |
+| `MACOS_CERTIFICATE_PWD`   | Password of that `.p12`                                               |
+| `MACOS_SIGNING_IDENTITY`  | `Developer ID Application: <name> (<team id>)`                        |
+| `NOTARIZATION_APPLE_ID`   | Apple ID used for notarization                                        |
+| `NOTARIZATION_PASSWORD`   | App-specific password for that Apple ID                               |
+| `NOTARIZATION_TEAM_ID`    | The 10-character team ID                                              |
+
+### Signing the Windows binary
+
+The Windows binary is Authenticode-signed with a Certum code-signing certificate through SimplySign Desktop.
+SimplySign needs an interactive login (OTP from the mobile app), so signing is a manual step *after* the
+workflow has published the release. With SimplySign Desktop running and logged in, and `gh` authenticated:
+
+```powershell
+.\mcpb\Sign-Release.ps1 -Version 1.0.12            # add -NoUpload to inspect target\signed first
+```
+
+[`mcpb/Sign-Release.ps1`](mcpb/Sign-Release.ps1) downloads the Windows binary from the release, signs it
+(SHA-256, Certum RFC 3161 timestamp), verifies signature and timestamp, re-packs the Windows `.mcpb` around
+the signed binary, replaces both assets on the release and dispatches the Bundles workflow to re-pack the
+universal bundle. The bundle manifest carries no file hashes, so a re-pack around a signed binary is a valid
+bundle. The script reads the certificate thumbprint from `$env:CERTUM_SIGN_THUMBPRINT` (or
+`$env:DISKSPACE_SIGN_THUMBPRINT`, the same certificate) so that renewal is a one-line edit in `$PROFILE`, not
+a commit. Always pin by thumbprint; `signtool /a` can pick the wrong certificate silently.
+
+What is *not* signed: the `.mcpb` container itself (`mcpb sign` needs the private key as a PEM file, which
+neither a SimplySign cloud certificate nor the Apple keychain identity exposes), and the Linux binaries, which
+have no signing convention.
+
 ## Troubleshooting
 
 - **`AccessDeniedException: C:\WINDOWS\system32\config`**: on Windows, Claude Desktop may launch the server with `C:\WINDOWS\system32` as the working directory, causing Quarkus to fail when scanning for config files. The `-Duser.dir` argument in the example config overrides the working directory, and `-Dquarkus.config.locations=.` prevents Quarkus from scanning restricted system directories. Point `-Duser.dir` to any directory your user can write to.
 - **Server disconnects immediately**: make sure `-Dquarkus.mcp.server.stdio.enabled=true` is in the `args` before `-jar`.
-- **No log output visible**: Quarkus logs go to `mcp-email-server.log` (in the working directory), not to stdout/stderr, to avoid interfering with the STDIO transport. Check that file for errors.
+- **No log output visible**: Quarkus logs go to `mcp-email-server.log` (in the working directory), not to stdout/stderr, to avoid interfering with the STDIO transport. Check that file for errors. With the MCP Bundle the working directory is your home directory, so the log is `~/mcp-email-server.log`.
 - **Authentication errors**: for Gmail, you need an [App Password](https://myaccount.google.com/apppasswords), not your regular password. Make sure 2-Step Verification is enabled on your Google account first.
 - **Build fails** (building from source): ensure `JAVA_HOME` points to JDK 21+. The system `java` on PATH may differ from what Maven uses.
 - **"Unknown account" errors**: call `listAccounts` first to see which accounts are configured. Account names are lowercase as defined in the environment variables (e.g., `work`, `gmail`).

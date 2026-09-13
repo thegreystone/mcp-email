@@ -28,10 +28,14 @@
  */
 package se.hirt.mcp.mail;
 
+import com.itextpdf.io.font.constants.StandardFonts;
+import com.itextpdf.kernel.font.PdfFont;
+import com.itextpdf.kernel.font.PdfFontFactory;
 import com.itextpdf.kernel.pdf.PdfDocument;
+import com.itextpdf.kernel.pdf.PdfName;
+import com.itextpdf.kernel.pdf.PdfStream;
 import com.itextpdf.kernel.pdf.PdfWriter;
-import com.itextpdf.layout.Document;
-import com.itextpdf.layout.element.Paragraph;
+import com.itextpdf.kernel.pdf.canvas.PdfCanvas;
 import io.quarkiverse.mcp.server.BlobResourceContents;
 import io.quarkiverse.mcp.server.EmbeddedResource;
 import io.quarkiverse.mcp.server.ImageContent;
@@ -47,6 +51,7 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -949,23 +954,55 @@ public class EmailTools {
 		}
 	}
 
+	private static final String SELF_TEST_XMP = """
+			<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+			<x:xmpmeta xmlns:x="adobe:ns:meta/">
+			  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+			    <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
+			      <dc:title><rdf:Alt><rdf:li xml:lang="x-default">mcp-email-server self-test</rdf:li></rdf:Alt></dc:title>
+			    </rdf:Description>
+			  </rdf:RDF>
+			</x:xmpmeta>
+			<?xpacket end="w"?>""";
+
 	@Tool(description = "Diagnostic: creates a small PDF in memory, extracts its text, and verifies the result. "
 			+ "Used to verify that PDF text extraction works correctly in this environment (including native image). "
 			+ "No email account or IMAP connection needed.")
 	String selfTestPdf() {
 		try {
 			var baos = new ByteArrayOutputStream();
-			try (var doc = new Document(new PdfDocument(new PdfWriter(baos)))) {
-				doc.add(new Paragraph("Hello from mcp-email-server PDF self-test!"));
-				doc.add(new Paragraph("If you can read this, iText PDF text extraction works."));
+			// Uses the kernel canvas API rather than the layout module so the native image stays small.
+			try (var pdf = new PdfDocument(new PdfWriter(baos))) {
+				PdfFont font = PdfFontFactory.createFont(StandardFonts.HELVETICA);
+				PdfCanvas canvas = new PdfCanvas(pdf.addNewPage());
+				canvas.beginText().setFontAndSize(font, 12).moveText(50, 750)
+						.showText("Hello from mcp-email-server PDF self-test!").endText();
+				canvas.beginText().setFontAndSize(font, 12).moveText(50, 730)
+						.showText("If you can read this, iText PDF text extraction works.").endText();
 			}
 
 			String extracted = PdfTextExtractorUtil.extractText(baos.toByteArray());
-			if (extracted.contains("Hello from mcp-email-server")) {
-				return "PDF self-test PASSED. Extracted text:\n" + extracted;
-			} else {
+			if (!extracted.contains("Hello from mcp-email-server")) {
 				return "PDF self-test FAILED. Unexpected content:\n" + extracted;
 			}
+
+			// Second document carries an XMP metadata packet, as most real-world PDFs do. The native
+			// image deliberately excludes iText's XMP parser (see se.hirt.mcp.mail.graal), so this
+			// verifies that such documents still open and extract cleanly.
+			var xmpBaos = new ByteArrayOutputStream();
+			try (var pdf = new PdfDocument(new PdfWriter(xmpBaos))) {
+				pdf.getCatalog().getPdfObject().put(PdfName.Metadata,
+						new PdfStream(SELF_TEST_XMP.getBytes(StandardCharsets.UTF_8)));
+				PdfFont font = PdfFontFactory.createFont(StandardFonts.HELVETICA);
+				PdfCanvas canvas = new PdfCanvas(pdf.addNewPage());
+				canvas.beginText().setFontAndSize(font, 12).moveText(50, 750)
+						.showText("XMP-tagged document extracted OK.").endText();
+			}
+			String extractedXmp = PdfTextExtractorUtil.extractText(xmpBaos.toByteArray());
+			if (!extractedXmp.contains("XMP-tagged document")) {
+				return "PDF self-test FAILED for a document with XMP metadata. Unexpected content:\n" + extractedXmp;
+			}
+			return "PDF self-test PASSED. Extracted text:\n" + extracted + "\n" + extractedXmp;
 		} catch (Exception e) {
 			return "PDF self-test FAILED: " + e.getClass().getName() + ": " + e.getMessage();
 		}

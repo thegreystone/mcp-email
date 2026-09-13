@@ -91,10 +91,18 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
             <artifactId>kernel</artifactId>
             <version>${itext.version}</version>
         </dependency>
+        <!-- Only tests build PDFs with the layout API; the server itself uses the kernel API to stay small. -->
         <dependency>
             <groupId>com.itextpdf</groupId>
             <artifactId>layout</artifactId>
             <version>${itext.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- GraalVM substitution annotations (see se.hirt.mcp.mail.graal); build-time only. -->
+        <dependency>
+            <groupId>org.graalvm.sdk</groupId>
+            <artifactId>nativeimage</artifactId>
+            <scope>provided</scope>
         </dependency>
 
 

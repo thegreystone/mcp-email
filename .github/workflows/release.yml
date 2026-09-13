@@ -37,20 +37,30 @@ jobs:
   # ── Native images ────────────────────────────────────────────────────
   native:
     strategy:
+      # One platform failing should not cancel the others: their binaries are still useful, and a re-run
+      # of the failed job alone is cheaper than rebuilding everything.
+      fail-fast: false
       matrix:
         include:
+          # mcpb_platform is set only where Claude Desktop exists: there is nothing to install a bundle into on Linux.
           - os: ubuntu-latest
             arch: x86_64
             suffix: linux-x86_64
+            exe: ''
           - os: ubuntu-24.04-arm
             arch: aarch64
             suffix: linux-aarch64
+            exe: ''
           - os: macos-latest
             arch: aarch64
             suffix: macos-aarch64
+            exe: ''
+            mcpb_platform: darwin
           - os: windows-latest
             arch: x86_64
             suffix: windows-x86_64
+            exe: '.exe'
+            mcpb_platform: win32
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -73,6 +83,42 @@ jobs:
 
       - name: Build native image
         run: mvn -B package -Dnative -DskipTests
+
+      - name: Import signing certificate (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          KEYCHAIN_PWD=$(openssl rand -base64 32)
+          echo "KEYCHAIN_PWD=$KEYCHAIN_PWD" >> "$GITHUB_ENV"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s \
+            -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+
+      - name: List signing identities (macOS)
+        if: runner.os == 'macOS'
+        run: security find-identity -v -p codesigning "$RUNNER_TEMP/build.keychain"
+
+      # Sign before the sanity test so the test exercises the hardened-runtime binary. No entitlements: the
+      # native image JITs nothing and loads no unsigned dylibs (the mail, HTML and PDF libraries are pure Java).
+      - name: Sign native binary (macOS)
+        if: runner.os == 'macOS'
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          codesign --force --timestamp --options runtime \
+            --sign "$MACOS_SIGNING_IDENTITY" \
+            "target/mcp-email-server-${VERSION}-runner"
+          codesign --verify --strict --verbose=2 "target/mcp-email-server-${VERSION}-runner"
 
       - name: Sanity test native binary (Unix)
         if: runner.os != 'Windows'
@@ -102,6 +148,41 @@ jobs:
           mv target/mcp-email-server-${VERSION}-runner.exe \
              target/mcp-email-server-${VERSION}-${{ matrix.suffix }}.exe
 
+      # A bare executable cannot be stapled, so Gatekeeper fetches the ticket online
+      # on first launch. Notarizing the zipped binary is enough for that lookup.
+      - name: Notarize native binary (macOS)
+        if: runner.os == 'macOS'
+        env:
+          NOTARIZATION_APPLE_ID: ${{ secrets.NOTARIZATION_APPLE_ID }}
+          NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
+          NOTARIZATION_TEAM_ID: ${{ secrets.NOTARIZATION_TEAM_ID }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          BINARY="target/mcp-email-server-${VERSION}-${{ matrix.suffix }}"
+          ZIP="$RUNNER_TEMP/notarize.zip"
+          ditto -c -k "$BINARY" "$ZIP"
+          xcrun notarytool submit "$ZIP" \
+            --apple-id "$NOTARIZATION_APPLE_ID" \
+            --password "$NOTARIZATION_PASSWORD" \
+            --team-id "$NOTARIZATION_TEAM_ID" \
+            --wait
+
+      - name: Clean up keychain (macOS)
+        if: runner.os == 'macOS' && always()
+        run: security delete-keychain "$RUNNER_TEMP/build.keychain"
+
+      # An MCP Bundle for each platform that has Claude Desktop (macOS, Windows), around the notarized (macOS)
+      # or bare (Windows, signed later by mcpb/Sign-Release.ps1) binary. Packed here so the executable bit
+      # survives on macOS.
+      - name: Package MCP bundle
+        if: matrix.mcpb_platform != ''
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          bash mcpb/pack.sh "$VERSION" "${{ matrix.suffix }}" "${{ matrix.mcpb_platform }}" \
+            "target/mcp-email-server-${VERSION}-${{ matrix.suffix }}${{ matrix.exe }}" \
+            "target/mcp-email-server-${VERSION}-${{ matrix.suffix }}.mcpb"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v5
         with:
@@ -109,17 +190,28 @@ jobs:
           path: |
             target/mcp-email-server-*-${{ matrix.suffix }}
             target/mcp-email-server-*-${{ matrix.suffix }}.exe
+            target/mcp-email-server-*-${{ matrix.suffix }}.mcpb
 
   # ── Create GitHub release with all artifacts ─────────────────────────
   release:
-    needs: [uber-jar, native]
+    needs: [ uber-jar, native ]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+
       - name: Download all artifacts
         uses: actions/download-artifact@v5
         with:
           path: artifacts
           merge-multiple: true
+
+      # The universal bundle carries every native binary; its manifest picks one per platform at launch.
+      # It is what a plugin marketplace entry points at. Packed here, on Linux, so the executable bits of
+      # the Unix binaries survive (download-artifact drops them, pack-universal.sh restores them).
+      - name: Package universal MCP bundle
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          bash mcpb/pack-universal.sh "$VERSION" artifacts "artifacts/mcp-email-server-${VERSION}-universal.mcpb"
 
       - name: List artifacts
         run: find artifacts -type f | sort
