@@ -1,0 +1,101 @@
+name: Bundles
+
+# Build the MCP Bundles (.mcpb) for an already published release and attach them to it. Bundles exist
+# only for the platforms Claude Desktop runs on: macOS and Windows. The release workflow builds them on
+# every tag; this one exists for releases cut before it did, and for re-packing after a binary on the
+# release was replaced (the Windows signing script re-packs its own Windows bundle and then dispatches this
+# workflow for the universal one). Each per-platform bundle is packed on its own platform, and the universal
+# bundle on Linux, so the executable bits are preserved.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version without the "v" prefix (e.g. 1.0.12)'
+        required: true
+        type: string
+      platforms:
+        description: 'Which bundles to build'
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - macos-only
+          - universal
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            suffix: macos-aarch64
+            exe: ''
+            mcpb_platform: darwin
+          - os: windows-latest
+            suffix: windows-x86_64
+            exe: '.exe'
+            mcpb_platform: win32
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download binary from release
+        if: inputs.platforms == 'all' || (inputs.platforms == 'macos-only' && matrix.mcpb_platform == 'darwin')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p target
+          gh release download "v${{ inputs.version }}" \
+            --pattern "mcp-email-server-${{ inputs.version }}-${{ matrix.suffix }}${{ matrix.exe }}" --dir target
+
+      - name: Package MCP bundle
+        if: inputs.platforms == 'all' || (inputs.platforms == 'macos-only' && matrix.mcpb_platform == 'darwin')
+        shell: bash
+        run: |
+          bash mcpb/pack.sh "${{ inputs.version }}" "${{ matrix.suffix }}" "${{ matrix.mcpb_platform }}" \
+            "target/mcp-email-server-${{ inputs.version }}-${{ matrix.suffix }}${{ matrix.exe }}" \
+            "target/mcp-email-server-${{ inputs.version }}-${{ matrix.suffix }}.mcpb"
+
+      - name: Attach bundle to release
+        if: inputs.platforms == 'all' || (inputs.platforms == 'macos-only' && matrix.mcpb_platform == 'darwin')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "v${{ inputs.version }}" --clobber \
+            "target/mcp-email-server-${{ inputs.version }}-${{ matrix.suffix }}.mcpb"
+
+  universal:
+    if: inputs.platforms == 'all' || inputs.platforms == 'universal'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download binaries from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p target/bin
+          for suffix in linux-x86_64 linux-aarch64 macos-aarch64 windows-x86_64.exe; do
+            gh release download "v${{ inputs.version }}" \
+              --pattern "mcp-email-server-${{ inputs.version }}-${suffix}" --dir target/bin
+          done
+
+      - name: Package universal MCP bundle
+        run: |
+          bash mcpb/pack-universal.sh "${{ inputs.version }}" target/bin \
+            "target/mcp-email-server-${{ inputs.version }}-universal.mcpb"
+
+      - name: Attach bundle to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "v${{ inputs.version }}" --clobber \
+            "target/mcp-email-server-${{ inputs.version }}-universal.mcpb"

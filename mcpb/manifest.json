@@ -1,0 +1,112 @@
+{
+  "manifest_version": "0.3",
+  "name": "mcp-email",
+  "display_name": "Email MCP Server",
+  "version": "__VERSION__",
+  "description": "Read, search, triage, file and draft email over IMAP and SMTP: your mailbox as tools for Claude.",
+  "long_description": "Exposes common email operations as tools: list folders, search and read messages including attachments (text is extracted from PDFs), move and flag messages, and save drafts. Credentials stay on your machine; the model only sees tool descriptions and the text the tools return. Sending and permanent deletion are off by default and can be switched on in the extension settings. The bundle configures one account, named default; more accounts can be added with the manual configuration described in the README.",
+  "author": {
+    "name": "Marcus Hirt",
+    "url": "https://www.hirt.se"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thegreystone/mcp-email"
+  },
+  "homepage": "https://github.com/thegreystone/mcp-email",
+  "documentation": "https://github.com/thegreystone/mcp-email/blob/master/README.md",
+  "support": "https://github.com/thegreystone/mcp-email/issues",
+  "license": "BSD-3-Clause",
+  "keywords": [
+    "email",
+    "imap",
+    "smtp",
+    "mail",
+    "inbox",
+    "triage"
+  ],
+  "server": {
+    "type": "binary",
+    "entry_point": "server/__BINARY__",
+    "mcp_config": {
+      "command": "${__dirname}/server/__BINARY__",
+      "args": [
+        "-Dquarkus.mcp.server.stdio.enabled=true",
+        "-Dquarkus.config.locations=.",
+        "-Duser.dir=${HOME}"
+      ],
+      "env": {
+        "EMAIL_ACCOUNTS_DEFAULT_IMAP_HOST": "${user_config.imap_host}",
+        "EMAIL_ACCOUNTS_DEFAULT_IMAP_USERNAME": "${user_config.imap_username}",
+        "EMAIL_ACCOUNTS_DEFAULT_IMAP_PASSWORD": "${user_config.imap_password}",
+        "EMAIL_ACCOUNTS_DEFAULT_SMTP_HOST": "${user_config.smtp_host}",
+        "EMAIL_ACCOUNTS_DEFAULT_SMTP_USERNAME": "${user_config.smtp_username}",
+        "EMAIL_ACCOUNTS_DEFAULT_SMTP_PASSWORD": "${user_config.smtp_password}",
+        "EMAIL_ALLOW_SENDING": "${user_config.allow_sending}",
+        "EMAIL_ALLOW_DELETION": "${user_config.allow_deletion}"
+      }
+    }
+  },
+  "tools_generated": true,
+  "prompts_generated": false,
+  "user_config": {
+    "imap_host": {
+      "type": "string",
+      "title": "IMAP server",
+      "description": "Hostname of the IMAP server, for example imap.gmail.com. Port 993 with SSL is assumed; other ports need the manual configuration from the README.",
+      "required": true
+    },
+    "imap_username": {
+      "type": "string",
+      "title": "IMAP username",
+      "description": "Usually your full email address.",
+      "required": true
+    },
+    "imap_password": {
+      "type": "string",
+      "title": "IMAP password",
+      "description": "For Gmail an App Password (https://myaccount.google.com/apppasswords), not your account password. Stored in the operating system keychain.",
+      "sensitive": true,
+      "required": true
+    },
+    "smtp_host": {
+      "type": "string",
+      "title": "SMTP server",
+      "description": "Hostname of the SMTP server, for example smtp.gmail.com. Port 587 with STARTTLS is assumed. The server requires it even while sending is switched off.",
+      "required": true
+    },
+    "smtp_username": {
+      "type": "string",
+      "title": "SMTP username",
+      "description": "Usually the same as the IMAP username.",
+      "required": true
+    },
+    "smtp_password": {
+      "type": "string",
+      "title": "SMTP password",
+      "description": "Usually the same as the IMAP password. Stored in the operating system keychain.",
+      "sensitive": true,
+      "required": true
+    },
+    "allow_sending": {
+      "type": "boolean",
+      "title": "Allow sending",
+      "description": "Let sendEmail, replyEmail and the forward tools actually transmit messages over SMTP. Off by default: those tools then explain the limitation, and saveDraft still writes to the Drafts folder for you to send yourself.",
+      "default": false,
+      "required": false
+    },
+    "allow_deletion": {
+      "type": "boolean",
+      "title": "Allow permanent deletion",
+      "description": "Let deleteEmail permanently delete messages. Off by default: moveEmail to a Trash folder is the safe alternative.",
+      "default": false,
+      "required": false
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": [
+      "__PLATFORM__"
+    ]
+  }
+}
