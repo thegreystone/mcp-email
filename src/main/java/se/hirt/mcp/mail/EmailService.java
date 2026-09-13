@@ -42,6 +42,7 @@ import jakarta.mail.search.SubjectTerm;
 import jakarta.mail.search.FromStringTerm;
 import jakarta.mail.search.BodyTerm;
 import jakarta.mail.search.FlagTerm;
+import org.eclipse.angus.mail.imap.IMAPFolder;
 
 import java.io.IOException;
 import java.util.*;
@@ -156,6 +157,10 @@ public class EmailService {
 		throw new MessagingException("Server refused to create folder: " + folderName);
 	}
 
+	public boolean folderExists(String account, String folderName) throws MessagingException {
+		return getImapStore(account).getFolder(folderName).exists();
+	}
+
 	public List<String> listFolders(String account) throws MessagingException {
 		var store = getImapStore(account);
 		var folders = store.getDefaultFolder().list("*");
@@ -196,25 +201,101 @@ public class EmailService {
 		return result;
 	}
 
-	// ── Spam folder detection ─────────────────────────────────────────────
+	// ── Special folder resolution (spam, drafts) ──────────────────────────
 
-	private static final List<String> SPAM_FOLDER_CANDIDATES = List.of("Spam", "Junk", "[Gmail]/Spam", "Junk E-mail",
-			"Bulk Mail", "Junk Email");
-
-	public String getSpamFolder(String account) throws MessagingException {
-		var cached = cachedSpamFolders.get(account);
+	/**
+	 * Resolves a special folder for an account. Resolution order:
+	 * <ol>
+	 * <li>a name set for this session with the corresponding set*Folder tool (always wins),</li>
+	 * <li>the configured name (EMAIL_ACCOUNTS_&lt;NAME&gt;_DRAFTS_FOLDER / _SPAM_FOLDER); a
+	 * configured folder that does not exist on the server is an error rather than a silent
+	 * fallback, so that the user learns about the misconfiguration and the LLM can work around it
+	 * with the set*Folder tool,</li>
+	 * <li>the RFC 6154 special-use attribute (e.g. {@code \Drafts}) reported by the server in
+	 * LIST,</li>
+	 * <li>well-known folder names tried in order,</li>
+	 * <li>any folder whose leaf name matches one of the given names, which handles servers that
+	 * nest everything under a namespace prefix such as {@code INBOX.INBOX.Drafts}.</li>
+	 * </ol>
+	 *
+	 * @return the full folder name, or {@code null} if nothing was found
+	 */
+	private String resolveSpecialFolder(
+		String account, Map<String, String> cache, Optional<String> configured, String kind, String setterTool,
+		String specialUse, List<String> candidates, List<String> leafNames) throws MessagingException {
+		var cached = cache.get(account);
 		if (cached != null)
 			return cached;
 
 		var store = getImapStore(account);
-		for (var candidate : SPAM_FOLDER_CANDIDATES) {
-			var folder = store.getFolder(candidate);
-			if (folder.exists()) {
-				cachedSpamFolders.put(account, candidate);
+
+		// Blank means unset. So does a literal ${...}: an MCP bundle host may pass an empty optional setting
+		// through as its unexpanded placeholder.
+		var configuredName = configured.filter(s -> !s.isBlank() && !s.startsWith("${")).orElse(null);
+		if (configuredName != null) {
+			if (!store.getFolder(configuredName).exists()) {
+				throw new MessagingException("The configured " + kind + " folder '" + configuredName
+						+ "' does not exist on the server for account " + account
+						+ ". Fix the configuration, or call listFolderTree to find the right folder and " + setterTool
+						+ " to override it for this session.");
+			}
+			cache.put(account, configuredName);
+			return configuredName;
+		}
+
+		var allFolders = store.getDefaultFolder().list("*");
+
+		for (var folder : allFolders) {
+			if (folder instanceof IMAPFolder imapFolder && hasAttribute(imapFolder, specialUse)) {
+				cache.put(account, folder.getFullName());
+				return folder.getFullName();
+			}
+		}
+
+		for (var candidate : candidates) {
+			if (store.getFolder(candidate).exists()) {
+				cache.put(account, candidate);
 				return candidate;
 			}
 		}
+
+		for (var folder : allFolders) {
+			var name = folder.getFullName();
+			var sep = folder.getSeparator();
+			var leaf = name.indexOf(sep) >= 0 ? name.substring(name.lastIndexOf(sep) + 1) : name;
+			for (var leafName : leafNames) {
+				if (leaf.equalsIgnoreCase(leafName)) {
+					cache.put(account, name);
+					return name;
+				}
+			}
+		}
 		return null;
+	}
+
+	private static boolean hasAttribute(IMAPFolder folder, String attribute) {
+		try {
+			for (var attr : folder.getAttributes()) {
+				if (attr.equalsIgnoreCase(attribute)) {
+					return true;
+				}
+			}
+		} catch (MessagingException e) {
+			// Attributes are optional metadata; a failure here just means we fall through to name matching.
+		}
+		return false;
+	}
+
+	// ── Spam folder detection ─────────────────────────────────────────────
+
+	private static final List<String> SPAM_FOLDER_CANDIDATES = List.of("Spam", "Junk", "[Gmail]/Spam", "Junk E-mail",
+			"Bulk Mail", "Junk Email");
+	private static final List<String> SPAM_FOLDER_LEAF_NAMES = List.of("Spam", "Junk", "Junk E-mail", "Bulk Mail",
+			"Junk Email");
+
+	public String getSpamFolder(String account) throws MessagingException {
+		return resolveSpecialFolder(account, cachedSpamFolders, getAccountConfig(account).spamFolder(), "spam",
+				"setSpamFolder", "\\Junk", SPAM_FOLDER_CANDIDATES, SPAM_FOLDER_LEAF_NAMES);
 	}
 
 	public void setSpamFolder(String account, String folderName) {
@@ -230,7 +311,8 @@ public class EmailService {
 			throws MessagingException {
 		var spamFolder = getSpamFolder(account);
 		if (spamFolder == null) {
-			throw new MessagingException("No spam folder detected. Use setSpamFolder to configure one.");
+			throw new MessagingException("No spam folder detected. Call listFolderTree to find it and setSpamFolder "
+					+ "to configure it for this session, or set EMAIL_ACCOUNTS_<NAME>_SPAM_FOLDER.");
 		}
 		return moveEmails(account, sourceFolderName, uids, spamFolder, markRead);
 	}
@@ -239,32 +321,11 @@ public class EmailService {
 
 	private static final List<String> DRAFTS_FOLDER_CANDIDATES = List.of("Drafts", "[Gmail]/Drafts", "Draft", "DRAFT",
 			"INBOX.Drafts", "INBOX.Draft");
+	private static final List<String> DRAFTS_FOLDER_LEAF_NAMES = List.of("Drafts", "Draft");
 
 	public String getDraftsFolder(String account) throws MessagingException {
-		var cached = cachedDraftsFolders.get(account);
-		if (cached != null)
-			return cached;
-
-		var store = getImapStore(account);
-		for (var candidate : DRAFTS_FOLDER_CANDIDATES) {
-			var folder = store.getFolder(candidate);
-			if (folder.exists()) {
-				cachedDraftsFolders.put(account, candidate);
-				return candidate;
-			}
-		}
-
-		// Fallback: scan all folders for one named "drafts" (case-insensitive)
-		for (var folder : store.getDefaultFolder().list("*")) {
-			var name = folder.getFullName();
-			var leaf = name.contains(String.valueOf(folder.getSeparator()))
-					? name.substring(name.lastIndexOf(folder.getSeparator()) + 1) : name;
-			if (leaf.equalsIgnoreCase("Drafts") || leaf.equalsIgnoreCase("Draft")) {
-				cachedDraftsFolders.put(account, name);
-				return name;
-			}
-		}
-		return null;
+		return resolveSpecialFolder(account, cachedDraftsFolders, getAccountConfig(account).draftsFolder(), "drafts",
+				"setDraftsFolder", "\\Drafts", DRAFTS_FOLDER_CANDIDATES, DRAFTS_FOLDER_LEAF_NAMES);
 	}
 
 	public void setDraftsFolder(String account, String folderName) {
@@ -312,7 +373,9 @@ public class EmailService {
 
 		var draftsName = getDraftsFolder(account);
 		if (draftsName == null) {
-			throw new MessagingException("No Drafts folder detected. Use setDraftsFolder to configure one.");
+			throw new MessagingException(
+					"No Drafts folder detected. Call listFolderTree to find it and setDraftsFolder "
+							+ "to configure it for this session, or set EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER.");
 		}
 
 		var store = getImapStore(account);

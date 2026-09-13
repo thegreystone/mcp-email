@@ -42,6 +42,8 @@
         "EMAIL_ACCOUNTS_DEFAULT_SMTP_HOST": "${user_config.smtp_host}",
         "EMAIL_ACCOUNTS_DEFAULT_SMTP_USERNAME": "${user_config.smtp_username}",
         "EMAIL_ACCOUNTS_DEFAULT_SMTP_PASSWORD": "${user_config.smtp_password}",
+        "EMAIL_ACCOUNTS_DEFAULT_DRAFTS_FOLDER": "${user_config.drafts_folder}",
+        "EMAIL_ACCOUNTS_DEFAULT_SPAM_FOLDER": "${user_config.spam_folder}",
         "EMAIL_ALLOW_SENDING": "${user_config.allow_sending}",
         "EMAIL_ALLOW_DELETION": "${user_config.allow_deletion}"
       }
@@ -87,6 +89,18 @@
       "description": "Usually the same as the IMAP password. Stored in the operating system keychain.",
       "sensitive": true,
       "required": true
+    },
+    "drafts_folder": {
+      "type": "string",
+      "title": "Drafts folder",
+      "description": "Full IMAP name of the Drafts folder that saveDraft writes to, for example INBOX.INBOX.Drafts. Leave empty to auto-detect (works for Gmail and most providers); set it only if drafts end up in the wrong place or saveDraft reports that no Drafts folder was found.",
+      "required": false
+    },
+    "spam_folder": {
+      "type": "string",
+      "title": "Spam folder",
+      "description": "Full IMAP name of the spam/junk folder that moveToSpam uses, for example INBOX.INBOX.Junk. Leave empty to auto-detect.",
+      "required": false
     },
     "allow_sending": {
       "type": "boolean",

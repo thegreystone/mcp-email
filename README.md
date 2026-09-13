@@ -50,9 +50,11 @@ For more information, see my [blog](https://hirt.se/blog/?p=1596).
 | `setEmailFlags` | Set any combination of seen, answered, forwarded, and flagged/starred on one or more emails |
 | `deleteEmail` | Permanently delete an email. **Disabled by default** — opt in via `EMAIL_ALLOW_DELETION=true` (see [Enabling permanent deletion](#enabling-permanent-deletion)) |
 | **Spam** | |
-| `getSpamFolder` | Auto-detect and cache the spam/junk folder |
-| `setSpamFolder` | Manually override the spam folder |
+| `getSpamFolder` | Resolve and cache the spam/junk folder (configured, special-use flag, or well-known name; see [Special folders](#special-folders)) |
+| `setSpamFolder` | Override the spam folder for this session |
 | **Composing** | |
+| `getDraftsFolder` | Resolve and cache the Drafts folder that `saveDraft` writes to (see [Special folders](#special-folders)) |
+| `setDraftsFolder` | Override the Drafts folder for this session |
 | `saveDraft` | Save a draft email for user review with CC/BCC (always available; preferred over send) |
 | `sendEmail` | Send an email via SMTP with CC/BCC. **Disabled by default** — opt in via `EMAIL_ALLOW_SENDING=true` (see [Enabling outbound sending](#enabling-outbound-sending)) |
 | `replyEmail` | Reply with proper threading headers and optional CC/BCC. **Disabled by default** — opt in via `EMAIL_ALLOW_SENDING=true` |
@@ -116,8 +118,29 @@ Accounts are defined by convention: `EMAIL_ACCOUNTS_<NAME>_IMAP_*` and `EMAIL_AC
 | `EMAIL_ACCOUNTS_<NAME>_SMTP_PASSWORD` | yes | | `abcd efgh ijkl mnop` |
 | `EMAIL_ACCOUNTS_<NAME>_SMTP_PORT` | no | `587` | |
 | `EMAIL_ACCOUNTS_<NAME>_SMTP_STARTTLS` | no | `true` | |
+| `EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER` | no | auto-detected | `INBOX.INBOX.Drafts` |
+| `EMAIL_ACCOUNTS_<NAME>_SPAM_FOLDER` | no | auto-detected | `INBOX.INBOX.Junk` |
 
 For Gmail, create an [App Password](https://myaccount.google.com/apppasswords).
+
+### Special folders
+
+`saveDraft` and `moveToSpam` need to know the account's Drafts and spam folders. Most servers need no
+configuration; the folder is resolved on first use, in this order:
+
+1. A folder set for the current session with `setDraftsFolder` / `setSpamFolder`.
+2. The configured `EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER` / `EMAIL_ACCOUNTS_<NAME>_SPAM_FOLDER`. A configured
+   folder that does not exist on the server is reported as an error rather than silently falling back, so
+   the LLM can point out the misconfiguration and work around it with the `set*Folder` tool for the session.
+3. The folder the server flags as `\Drafts` / `\Junk` (RFC 6154 special-use, supported by Gmail, Dovecot,
+   Exchange and most others).
+4. Well-known names such as `Drafts`, `[Gmail]/Drafts`, `INBOX.Drafts`, `Spam`, `Junk`, `[Gmail]/Spam`.
+5. Any folder whose last path element is `Drafts`, `Draft`, `Spam`, `Junk`, `Junk E-mail`, `Bulk Mail` or
+   `Junk Email`, which covers providers that nest everything under a namespace prefix (e.g. OVH's
+   `INBOX.INBOX.Drafts`).
+
+Set the variable explicitly if your provider uses a name none of the heuristics find, or if auto-detection
+picks the wrong folder.
 
 You can define as many accounts as needed. For example, to add a `work` and `gmail` account, set environment variables for both `EMAIL_ACCOUNTS_WORK_*` and `EMAIL_ACCOUNTS_GMAIL_*`.
 
@@ -138,7 +161,7 @@ When `EMAIL_ALLOW_DELETION` is unset (or `false`), `deleteEmail` is still listed
 
 #### Enabling outbound sending
 
-When `EMAIL_ALLOW_SENDING` is unset (or `false`), the four outbound tools above all return an explanatory error and do nothing. **`saveDraft` is unaffected** — it only writes to the IMAP `Drafts` folder, so the LLM can still compose messages for the user to review and send manually from their mail client. This is the recommended default workflow even when sending is enabled.
+When `EMAIL_ALLOW_SENDING` is unset (or `false`), the four outbound tools above all return an explanatory error and do nothing. **`saveDraft` is unaffected** — it only writes to the IMAP Drafts folder (see [Special folders](#special-folders)), so the LLM can still compose messages for the user to review and send manually from their mail client. This is the recommended default workflow even when sending is enabled.
 
 ## Setting up with Claude Desktop
 
@@ -146,8 +169,10 @@ The easiest way is the MCP Bundle. Download the `.mcpb` file for macOS or Window
 [Releases page](https://github.com/thegreystone/mcp-email/releases/latest) (for example
 `mcp-email-server-1.0.12-windows-x86_64.mcpb`), then either double-click it or open it from
 *Settings → Extensions* in Claude Desktop. The extension's settings page asks for the IMAP and SMTP server,
-username and password of one account (passwords go to the operating system keychain) and has two switches,
-*Allow sending* and *Allow permanent deletion*, both off by default. No config file to edit. The account is
+username and password of one account (passwords go to the operating system keychain), has two optional fields,
+*Drafts folder* and *Spam folder*, for providers where auto-detection picks the wrong folder (see
+[Special folders](#special-folders)), and has two switches, *Allow sending* and *Allow permanent deletion*, both
+off by default. No config file to edit. The account is
 called `default` in the tools. The bundle contains the same native binary as the standalone download, signed and notarized on macOS and
 Authenticode-signed on Windows, and configures a single account with the default ports; for several accounts, or other ports and SSL settings,
 use the manual route below. The bundle file itself carries no signature, so Claude Desktop shows its standard
@@ -329,11 +354,11 @@ Pushing a `v<version>` tag runs the release workflow, which builds the uber-jar 
 packs an [MCP Bundle](https://github.com/anthropics/mcpb) (`.mcpb`) for macOS and Windows, the two platforms
 that have Claude Desktop. A bundle is the binary under `server/` plus a `manifest.json` filled in from
 [`mcpb/manifest.json`](mcpb/manifest.json) (`__VERSION__`, `__BINARY__` and `__PLATFORM__` are substituted).
-The manifest declares one account's IMAP and SMTP settings and the two safety switches as `user_config`,
-mapped to the `EMAIL_ACCOUNTS_DEFAULT_*`, `EMAIL_ALLOW_SENDING` and `EMAIL_ALLOW_DELETION` environment
-variables, and passes the same `-Duser.dir` and `-Dquarkus.config.locations` arguments as the Claude Desktop
-example above, with the home directory as working directory. The packing is [`mcpb/pack.sh`](mcpb/pack.sh),
-run on the runner that built the binary so the executable bit survives on macOS.
+The manifest declares one account's IMAP and SMTP settings, the optional Drafts and spam folders and the two
+safety switches as `user_config`, mapped to the `EMAIL_ACCOUNTS_DEFAULT_*`, `EMAIL_ALLOW_SENDING` and
+`EMAIL_ALLOW_DELETION` environment variables, and passes the same `-Duser.dir` and
+`-Dquarkus.config.locations` arguments as the Claude Desktop example above, with the home directory as
+working directory. The packing is [`mcpb/pack.sh`](mcpb/pack.sh), run on the runner that built the binary so the executable bit survives on macOS.
 
 The release also packs a **universal** bundle, `mcp-email-server-<version>-universal.mcpb`, with the macOS
 and Windows binaries and a manifest whose `platform_overrides` pick one per operating system
