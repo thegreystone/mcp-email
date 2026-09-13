@@ -41,49 +41,49 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PdfTextExtractionTest {
 
-    @Test
-    void extractTextFromSimplePdf() throws Exception {
-        byte[] pdfBytes = createTestPdf("Hello, World!", "This is a test PDF.");
-        String text = PdfTextExtractorUtil.extractText(pdfBytes);
-        assertTrue(text.contains("Hello, World!"), "Should contain first paragraph: " + text);
-        assertTrue(text.contains("This is a test PDF."), "Should contain second paragraph: " + text);
-    }
+	@Test
+	void extractTextFromSimplePdf() throws Exception {
+		byte[] pdfBytes = createTestPdf("Hello, World!", "This is a test PDF.");
+		String text = PdfTextExtractorUtil.extractText(pdfBytes);
+		assertTrue(text.contains("Hello, World!"), "Should contain first paragraph: " + text);
+		assertTrue(text.contains("This is a test PDF."), "Should contain second paragraph: " + text);
+	}
 
-    @Test
-    void extractTextFromMultiPagePdf() throws Exception {
-        var baos = new ByteArrayOutputStream();
-        try (var doc = new Document(new PdfDocument(new PdfWriter(baos)))) {
-            doc.add(new Paragraph("Page one content."));
-            doc.add(new AreaBreak());
-            doc.add(new Paragraph("Page two content."));
-        }
-        String text = PdfTextExtractorUtil.extractText(baos.toByteArray());
-        assertTrue(text.contains("Page one content."), "Should contain page 1 text: " + text);
-        assertTrue(text.contains("Page two content."), "Should contain page 2 text: " + text);
-    }
+	@Test
+	void extractTextFromMultiPagePdf() throws Exception {
+		var baos = new ByteArrayOutputStream();
+		try (var doc = new Document(new PdfDocument(new PdfWriter(baos)))) {
+			doc.add(new Paragraph("Page one content."));
+			doc.add(new AreaBreak());
+			doc.add(new Paragraph("Page two content."));
+		}
+		String text = PdfTextExtractorUtil.extractText(baos.toByteArray());
+		assertTrue(text.contains("Page one content."), "Should contain page 1 text: " + text);
+		assertTrue(text.contains("Page two content."), "Should contain page 2 text: " + text);
+	}
 
-    @Test
-    void extractTextFromEmptyPdf() throws Exception {
-        var baos = new ByteArrayOutputStream();
-        try (var doc = new Document(new PdfDocument(new PdfWriter(baos)))) {
-            doc.add(new Paragraph(""));
-        }
-        String text = PdfTextExtractorUtil.extractText(baos.toByteArray());
-        assertNotNull(text);
-    }
+	@Test
+	void extractTextFromEmptyPdf() throws Exception {
+		var baos = new ByteArrayOutputStream();
+		try (var doc = new Document(new PdfDocument(new PdfWriter(baos)))) {
+			doc.add(new Paragraph(""));
+		}
+		String text = PdfTextExtractorUtil.extractText(baos.toByteArray());
+		assertNotNull(text);
+	}
 
-    @Test
-    void invalidPdfThrowsException() {
-        assertThrows(Exception.class, () -> PdfTextExtractorUtil.extractText(new byte[]{1, 2, 3}));
-    }
+	@Test
+	void invalidPdfThrowsException() {
+		assertThrows(Exception.class, () -> PdfTextExtractorUtil.extractText(new byte[] {1, 2, 3}));
+	}
 
-    private byte[] createTestPdf(String... paragraphs) throws Exception {
-        var baos = new ByteArrayOutputStream();
-        try (var doc = new Document(new PdfDocument(new PdfWriter(baos)))) {
-            for (String text : paragraphs) {
-                doc.add(new Paragraph(text));
-            }
-        }
-        return baos.toByteArray();
-    }
+	private byte[] createTestPdf(String ... paragraphs) throws Exception {
+		var baos = new ByteArrayOutputStream();
+		try (var doc = new Document(new PdfDocument(new PdfWriter(baos)))) {
+			for (String text : paragraphs) {
+				doc.add(new Paragraph(text));
+			}
+		}
+		return baos.toByteArray();
+	}
 }

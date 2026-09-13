@@ -37,18 +37,19 @@ import java.io.IOException;
 
 public class PdfTextExtractorUtil {
 
-    private PdfTextExtractorUtil() {
-    }
+	private PdfTextExtractorUtil() {
+	}
 
-    public static String extractText(byte[] pdfData) throws IOException {
-        try (var pdfDoc = new PdfDocument(new PdfReader(new ByteArrayInputStream(pdfData)))) {
-            var sb = new StringBuilder();
-            int pages = pdfDoc.getNumberOfPages();
-            for (int i = 1; i <= pages; i++) {
-                if (i > 1) sb.append("\n\n");
-                sb.append(PdfTextExtractor.getTextFromPage(pdfDoc.getPage(i)));
-            }
-            return sb.toString();
-        }
-    }
+	public static String extractText(byte[] pdfData) throws IOException {
+		try (var pdfDoc = new PdfDocument(new PdfReader(new ByteArrayInputStream(pdfData)))) {
+			var sb = new StringBuilder();
+			int pages = pdfDoc.getNumberOfPages();
+			for (int i = 1; i <= pages; i++) {
+				if (i > 1)
+					sb.append("\n\n");
+				sb.append(PdfTextExtractor.getTextFromPage(pdfDoc.getPage(i)));
+			}
+			return sb.toString();
+		}
+	}
 }

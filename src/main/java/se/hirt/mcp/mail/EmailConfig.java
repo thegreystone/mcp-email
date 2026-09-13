@@ -36,38 +36,39 @@ import java.util.Map;
 @ConfigMapping(prefix = "email")
 public interface EmailConfig {
 
-    Map<String, AccountConfig> accounts();
+	Map<String, AccountConfig> accounts();
 
-    interface AccountConfig {
-        ImapConfig imap();
-        SmtpConfig smtp();
-    }
+	interface AccountConfig {
+		ImapConfig imap();
 
-    interface ImapConfig {
-        String host();
+		SmtpConfig smtp();
+	}
 
-        @WithDefault("993")
-        int port();
+	interface ImapConfig {
+		String host();
 
-        String username();
+		@WithDefault("993")
+		int port();
 
-        String password();
+		String username();
 
-        @WithDefault("true")
-        boolean ssl();
-    }
+		String password();
 
-    interface SmtpConfig {
-        String host();
+		@WithDefault("true")
+		boolean ssl();
+	}
 
-        @WithDefault("587")
-        int port();
+	interface SmtpConfig {
+		String host();
 
-        String username();
+		@WithDefault("587")
+		int port();
 
-        String password();
+		String username();
 
-        @WithDefault("true")
-        boolean starttls();
-    }
+		String password();
+
+		@WithDefault("true")
+		boolean starttls();
+	}
 }
