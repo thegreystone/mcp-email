@@ -169,8 +169,10 @@ The easiest way is the MCP Bundle. Download the `.mcpb` file for macOS or Window
 [Releases page](https://github.com/thegreystone/mcp-email/releases/latest) (for example
 `mcp-email-server-1.0.12-windows-x86_64.mcpb`), then either double-click it or open it from
 *Settings → Extensions* in Claude Desktop. The extension's settings page asks for the IMAP and SMTP server,
-username and password of one account (passwords go to the operating system keychain) and has two switches,
-*Allow sending* and *Allow permanent deletion*, both off by default. No config file to edit. The account is
+username and password of one account (passwords go to the operating system keychain), has two optional fields,
+*Drafts folder* and *Spam folder*, for providers where auto-detection picks the wrong folder (see
+[Special folders](#special-folders)), and has two switches, *Allow sending* and *Allow permanent deletion*, both
+off by default. No config file to edit. The account is
 called `default` in the tools. The bundle contains the same native binary as the standalone download, signed and notarized on macOS and
 Authenticode-signed on Windows, and configures a single account with the default ports; for several accounts, or other ports and SSL settings,
 use the manual route below. The bundle file itself carries no signature, so Claude Desktop shows its standard
@@ -352,11 +354,11 @@ Pushing a `v<version>` tag runs the release workflow, which builds the uber-jar 
 packs an [MCP Bundle](https://github.com/anthropics/mcpb) (`.mcpb`) for macOS and Windows, the two platforms
 that have Claude Desktop. A bundle is the binary under `server/` plus a `manifest.json` filled in from
 [`mcpb/manifest.json`](mcpb/manifest.json) (`__VERSION__`, `__BINARY__` and `__PLATFORM__` are substituted).
-The manifest declares one account's IMAP and SMTP settings and the two safety switches as `user_config`,
-mapped to the `EMAIL_ACCOUNTS_DEFAULT_*`, `EMAIL_ALLOW_SENDING` and `EMAIL_ALLOW_DELETION` environment
-variables, and passes the same `-Duser.dir` and `-Dquarkus.config.locations` arguments as the Claude Desktop
-example above, with the home directory as working directory. The packing is [`mcpb/pack.sh`](mcpb/pack.sh),
-run on the runner that built the binary so the executable bit survives on macOS.
+The manifest declares one account's IMAP and SMTP settings, the optional Drafts and spam folders and the two
+safety switches as `user_config`, mapped to the `EMAIL_ACCOUNTS_DEFAULT_*`, `EMAIL_ALLOW_SENDING` and
+`EMAIL_ALLOW_DELETION` environment variables, and passes the same `-Duser.dir` and
+`-Dquarkus.config.locations` arguments as the Claude Desktop example above, with the home directory as
+working directory. The packing is [`mcpb/pack.sh`](mcpb/pack.sh), run on the runner that built the binary so the executable bit survives on macOS.
 
 The release also packs a **universal** bundle, `mcp-email-server-<version>-universal.mcpb`, with the macOS
 and Windows binaries and a manifest whose `platform_overrides` pick one per operating system
