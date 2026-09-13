@@ -205,7 +205,8 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      # The universal bundle carries every native binary; its manifest picks one per platform at launch.
+      # The universal bundle carries the Linux x86_64, macOS and Windows binaries (Linux aarch64 is left out
+      # for size); its manifest picks one per platform at launch.
       # It is what a plugin marketplace entry points at. Packed here, on Linux, so the executable bits of
       # the Unix binaries survive (download-artifact drops them, pack-universal.sh restores them).
       - name: Package universal MCP bundle

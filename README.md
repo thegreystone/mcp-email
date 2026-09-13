@@ -335,10 +335,11 @@ variables, and passes the same `-Duser.dir` and `-Dquarkus.config.locations` arg
 example above, with the home directory as working directory. The packing is [`mcpb/pack.sh`](mcpb/pack.sh),
 run on the runner that built the binary so the executable bit survives on macOS.
 
-The release also packs a **universal** bundle, `mcp-email-server-<version>-universal.mcpb`, with all four
-binaries and a manifest whose `platform_overrides` pick one per operating system
+The release also packs a **universal** bundle, `mcp-email-server-<version>-universal.mcpb`, with the Linux
+x86_64, macOS and Windows binaries and a manifest whose `platform_overrides` pick one per operating system
 ([`mcpb/manifest-universal.json`](mcpb/manifest-universal.json); on Linux
-[`mcpb/linux-launcher.sh`](mcpb/linux-launcher.sh) picks the architecture). It exists for a Claude plugin
+[`mcpb/linux-launcher.sh`](mcpb/linux-launcher.sh) checks the architecture). Linux aarch64 is left out to
+keep the bundle around 50 MB; those users take the standalone binary. It exists for a Claude plugin
 marketplace entry, which can reference only one bundle for every platform; direct downloads should keep
 using the per-platform bundles. [`mcpb/pack-universal.sh`](mcpb/pack-universal.sh) runs on Linux only, since
 a pack done on Windows cannot set the executable bits of the Unix binaries.

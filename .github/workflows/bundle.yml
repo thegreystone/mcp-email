@@ -83,7 +83,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p target/bin
-          for suffix in linux-x86_64 linux-aarch64 macos-aarch64 windows-x86_64.exe; do
+          for suffix in linux-x86_64 macos-aarch64 windows-x86_64.exe; do
             gh release download "v${{ inputs.version }}" \
               --pattern "mcp-email-server-${{ inputs.version }}-${suffix}" --dir target/bin
           done
