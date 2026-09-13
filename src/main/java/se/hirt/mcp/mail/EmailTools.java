@@ -414,10 +414,12 @@ public class EmailTools {
 		}
 	}
 
-	@Tool(description = "Get the detected spam/junk folder for this account. "
-			+ "Auto-detects on first call, preferring 'Spam' if it exists, then Junk, [Gmail]/Spam, etc. "
+	@Tool(description = "Get the spam/junk folder for this account. "
+			+ "Uses the configured folder if one is set, otherwise auto-detects on first call via the server's "
+			+ "\\Junk special-use flag, then well-known names such as Spam, Junk or [Gmail]/Spam. "
 			+ "Call this once at the start of a spam triage session and reuse the result. "
-			+ "If auto-detection fails, use setSpamFolder to set it manually. "
+			+ "If the configured folder does not exist, or auto-detection fails, call listFolderTree to find the "
+			+ "right folder and setSpamFolder to set it for this session. "
 			+ "Note: some users have a dedicated folder for training SpamAssassin or similar tools "
 			+ "(e.g. 'spam-training' or 'sa-learn'). Ask the user if they use a specific folder for "
 			+ "spam filter training, as that may be a better target than the default spam folder. "
@@ -427,8 +429,9 @@ public class EmailTools {
 		try {
 			var folder = emailService.getSpamFolder(account);
 			if (folder == null) {
-				return "Could not auto-detect a spam folder. Use setSpamFolder to configure one, "
-						+ "or call listFolderTree to find the right folder name.";
+				return "Could not auto-detect a spam folder. Call listFolderTree to find the right folder name "
+						+ "and setSpamFolder to set it for this session. The user can make it permanent with "
+						+ "EMAIL_ACCOUNTS_<NAME>_SPAM_FOLDER.";
 			}
 			return folder;
 		} catch (Exception e) {
@@ -436,13 +439,64 @@ public class EmailTools {
 		}
 	}
 
-	@Tool(description = "Manually set the spam/junk folder name if auto-detection picked the wrong one. "
+	@Tool(description = "Set the spam/junk folder for this session if the configured folder is wrong or "
+			+ "auto-detection picked the wrong one. The folder must exist; use listFolderTree to find its full name. "
+			+ "The override lasts until the server restarts; tell the user to set "
+			+ "EMAIL_ACCOUNTS_<NAME>_SPAM_FOLDER to make it permanent. "
 			+ "Call listAccounts first to discover available accounts.")
 	String setSpamFolder(@ToolArg(description = "Account name, e.g. 'work' or 'gmail'")
-	String account, @ToolArg(description = "Full folder name, e.g. [Gmail]/Spam or Junk")
+	String account, @ToolArg(description = "Full folder name, e.g. [Gmail]/Spam or INBOX.INBOX.Junk")
 	String folderName) {
-		emailService.setSpamFolder(account, folderName);
-		return "Spam folder set to: " + folderName;
+		return setSpecialFolder(account, folderName, "Spam", emailService::setSpamFolder);
+	}
+
+	@Tool(description = "Get the Drafts folder that saveDraft writes to for this account. "
+			+ "Uses the configured folder if one is set, otherwise auto-detects on first call via the server's "
+			+ "\\Drafts special-use flag, then well-known names such as Drafts or [Gmail]/Drafts. "
+			+ "If the configured folder does not exist, or auto-detection fails, call listFolderTree to find the "
+			+ "right folder and setDraftsFolder to set it for this session. "
+			+ "Call listAccounts first to discover available accounts.")
+	String getDraftsFolder(@ToolArg(description = "Account name, e.g. 'work' or 'gmail'")
+	String account) {
+		try {
+			var folder = emailService.getDraftsFolder(account);
+			if (folder == null) {
+				return "Could not auto-detect a Drafts folder. Call listFolderTree to find the right folder name "
+						+ "and setDraftsFolder to set it for this session. The user can make it permanent with "
+						+ "EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER.";
+			}
+			return folder;
+		} catch (Exception e) {
+			return "Error: " + e.getMessage();
+		}
+	}
+
+	@Tool(description = "Set the Drafts folder for this session if the configured folder is wrong or "
+			+ "auto-detection picked the wrong one. The folder must exist; use listFolderTree to find its full name. "
+			+ "The override lasts until the server restarts; tell the user to set "
+			+ "EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER to make it permanent. "
+			+ "Call listAccounts first to discover available accounts.")
+	String setDraftsFolder(@ToolArg(description = "Account name, e.g. 'work' or 'gmail'")
+	String account, @ToolArg(description = "Full folder name, e.g. [Gmail]/Drafts or INBOX.INBOX.Drafts")
+	String folderName) {
+		return setSpecialFolder(account, folderName, "Drafts", emailService::setDraftsFolder);
+	}
+
+	private String setSpecialFolder(
+		String account, String folderName, String kind, java.util.function.BiConsumer<String, String> setter) {
+		if (folderName == null || folderName.isBlank()) {
+			return "Error: folder name must not be empty.";
+		}
+		try {
+			if (!emailService.folderExists(account, folderName)) {
+				return "Error: folder '" + folderName + "' does not exist in account " + account
+						+ ". Call listFolderTree to find the right folder name.";
+			}
+		} catch (Exception e) {
+			return "Error: " + e.getMessage();
+		}
+		setter.accept(account, folderName);
+		return kind + " folder set to: " + folderName;
 	}
 
 	@Tool(description = "Move one or more emails to the spam/junk folder. Uses the cached spam folder from "

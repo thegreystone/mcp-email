@@ -32,6 +32,7 @@ import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;
 
 import java.util.Map;
+import java.util.Optional;
 
 @ConfigMapping(prefix = "email")
 public interface EmailConfig {
@@ -42,6 +43,20 @@ public interface EmailConfig {
 		ImapConfig imap();
 
 		SmtpConfig smtp();
+
+		/**
+		 * Full IMAP name of the Drafts folder, e.g. {@code INBOX.INBOX.Drafts}. When set, it is
+		 * used as is and auto-detection is skipped; a name that does not exist on the server is
+		 * reported as an error so that the folder can be overridden for the session with the
+		 * setDraftsFolder tool.
+		 */
+		Optional<String> draftsFolder();
+
+		/**
+		 * Full IMAP name of the spam/junk folder. Same semantics as {@link #draftsFolder()},
+		 * overridable with the setSpamFolder tool.
+		 */
+		Optional<String> spamFolder();
 	}
 
 	interface ImapConfig {
