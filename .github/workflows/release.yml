@@ -205,10 +205,10 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      # The universal bundle carries the Linux x86_64, macOS and Windows binaries (Linux aarch64 is left out
-      # for size); its manifest picks one per platform at launch.
-      # It is what a plugin marketplace entry points at. Packed here, on Linux, so the executable bits of
-      # the Unix binaries survive (download-artifact drops them, pack-universal.sh restores them).
+      # The universal bundle carries the macOS and Windows binaries (no Linux: Claude Desktop does not run
+      # there); its manifest picks one per platform at launch.
+      # It is what a plugin marketplace entry points at. Packed here, on Linux, so the executable bit of
+      # the macOS binary survives (download-artifact drops it, pack-universal.sh restores it).
       - name: Package universal MCP bundle
         run: |
           VERSION="${GITHUB_REF_NAME#v}"

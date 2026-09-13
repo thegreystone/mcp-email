@@ -27,9 +27,9 @@
   ],
   "server": {
     "type": "binary",
-    "entry_point": "server/mcp-email-server-__VERSION__-linux",
+    "entry_point": "server/mcp-email-server-__VERSION__-macos-aarch64",
     "mcp_config": {
-      "command": "${__dirname}/server/mcp-email-server-__VERSION__-linux",
+      "command": "${__dirname}/server/mcp-email-server-__VERSION__-macos-aarch64",
       "args": [
         "-Dquarkus.mcp.server.stdio.enabled=true",
         "-Dquarkus.config.locations=.",
@@ -51,9 +51,6 @@
         },
         "win32": {
           "command": "${__dirname}/server/mcp-email-server-__VERSION__-windows-x86_64.exe"
-        },
-        "linux": {
-          "command": "${__dirname}/server/mcp-email-server-__VERSION__-linux"
         }
       }
     }
@@ -118,8 +115,7 @@
     "claude_desktop": ">=1.0.0",
     "platforms": [
       "darwin",
-      "win32",
-      "linux"
+      "win32"
     ]
   }
 }

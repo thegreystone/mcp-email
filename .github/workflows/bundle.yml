@@ -5,7 +5,8 @@ name: Bundles
 # every tag; this one exists for releases cut before it did, and for re-packing after a binary on the
 # release was replaced (the Windows signing script re-packs its own Windows bundle and then dispatches this
 # workflow for the universal one). Each per-platform bundle is packed on its own platform, and the universal
-# bundle on Linux, so the executable bits are preserved.
+# bundle on Linux, so the executable bits are preserved. The universal bundle holds only the macOS and
+# Windows binaries; Linux users take the standalone binary.
 on:
   workflow_dispatch:
     inputs:
@@ -83,7 +84,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p target/bin
-          for suffix in linux-x86_64 macos-aarch64 windows-x86_64.exe; do
+          for suffix in macos-aarch64 windows-x86_64.exe; do
             gh release download "v${{ inputs.version }}" \
               --pattern "mcp-email-server-${{ inputs.version }}-${suffix}" --dir target/bin
           done
