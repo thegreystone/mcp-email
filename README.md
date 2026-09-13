@@ -17,7 +17,7 @@ For more information, see my [blog](https://hirt.se/blog/?p=1596).
 
 > "Please help triage the emails in my inboxes. As per usual, flag anything that is actionable. Don't hesitate to read emails that you are uncertain about. For anything actionable, provide an action plan. For anything non-actionable, file according to the folder layout."
 
-**WARNING:** This server performs real operations on your mailbox — moving, deleting, and sending emails. Always ensure you have a backup of your Maildir / emails before use. The author assumes no responsibility for any loss of data or unintended consequences resulting from the use of this MCP server. Use at your own risk.
+**WARNING:** This server performs real operations on your mailbox, for example moving emails around. By default it will not allow deletions and directly sending emails (this can be changed in the MCP config). The author assumes no responsibility for any loss of data or unintended consequences resulting from the use of this MCP server. Use at your own risk.
 
 **NOTE:** That said, the author has been using this daily for weeks without issues.
 
