@@ -44,6 +44,7 @@
         "EMAIL_ACCOUNTS_DEFAULT_SMTP_PASSWORD": "${user_config.smtp_password}",
         "EMAIL_ACCOUNTS_DEFAULT_DRAFTS_FOLDER": "${user_config.drafts_folder}",
         "EMAIL_ACCOUNTS_DEFAULT_SPAM_FOLDER": "${user_config.spam_folder}",
+        "EMAIL_ACCOUNTS_DEFAULT_TRASH_FOLDER": "${user_config.trash_folder}",
         "EMAIL_ALLOW_SENDING": "${user_config.allow_sending}",
         "EMAIL_ALLOW_DELETION": "${user_config.allow_deletion}"
       },
@@ -108,6 +109,12 @@
       "type": "string",
       "title": "Spam folder",
       "description": "Full IMAP name of the spam/junk folder that moveToSpam uses, for example INBOX.INBOX.Junk. Leave empty to auto-detect.",
+      "required": false
+    },
+    "trash_folder": {
+      "type": "string",
+      "title": "Trash folder",
+      "description": "Full IMAP name of the trash folder that deleteEmail moves messages to, for example INBOX.INBOX.Trash. Leave empty to auto-detect.",
       "required": false
     },
     "allow_sending": {

@@ -68,6 +68,12 @@ public interface EmailConfig {
 		 * overridable with the setSpamFolder tool.
 		 */
 		Optional<String> spamFolder();
+
+		/**
+		 * Full IMAP name of the trash folder that deleteEmail moves messages to. Same semantics as
+		 * {@link #draftsFolder()}, overridable with the setTrashFolder tool.
+		 */
+		Optional<String> trashFolder();
 	}
 
 	interface ImapConfig {

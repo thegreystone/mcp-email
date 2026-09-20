@@ -507,6 +507,39 @@ public class EmailTools {
 		return setSpecialFolder(account, folderName, "Drafts", emailService::setDraftsFolder);
 	}
 
+	@Tool(description = "Get the trash folder that deleteEmail moves messages to for this account. "
+			+ "Uses the configured folder if one is set, otherwise auto-detects on first call via the server's "
+			+ "\\Trash special-use flag, then well-known names such as Trash, [Gmail]/Trash or Deleted Items. "
+			+ "If the configured folder does not exist, or auto-detection fails, call listFolderTree to find the "
+			+ "right folder and setTrashFolder to set it for this session. "
+			+ "Call listAccounts first to discover available accounts.")
+	String getTrashFolder(@ToolArg(description = "Account name, e.g. 'work' or 'gmail'")
+	String account) {
+		try {
+			var folder = emailService.getTrashFolder(account);
+			if (folder == null) {
+				throw new ToolCallException(
+						"Could not auto-detect a trash folder. Call listFolderTree to find the right folder name "
+								+ "and setTrashFolder to set it for this session. The user can make it permanent with "
+								+ "EMAIL_ACCOUNTS_<NAME>_TRASH_FOLDER.");
+			}
+			return folder;
+		} catch (Exception e) {
+			throw failure("Error", e);
+		}
+	}
+
+	@Tool(description = "Set the trash folder for this session if the configured folder is wrong or "
+			+ "auto-detection picked the wrong one. The folder must exist; use listFolderTree to find its full name. "
+			+ "The override lasts until the server restarts; tell the user to set "
+			+ "EMAIL_ACCOUNTS_<NAME>_TRASH_FOLDER to make it permanent. "
+			+ "Call listAccounts first to discover available accounts.")
+	String setTrashFolder(@ToolArg(description = "Account name, e.g. 'work' or 'gmail'")
+	String account, @ToolArg(description = "Full folder name, e.g. [Gmail]/Trash or INBOX.INBOX.Trash")
+	String folderName) {
+		return setSpecialFolder(account, folderName, "Trash", emailService::setTrashFolder);
+	}
+
 	private String setSpecialFolder(
 		String account, String folderName, String kind, java.util.function.BiConsumer<String, String> setter) {
 		if (folderName == null || folderName.isBlank()) {
@@ -622,12 +655,12 @@ public class EmailTools {
 		}
 	}
 
-	@Tool(description = "Delete an email. DISABLED BY DEFAULT — the server administrator must explicitly opt in "
-			+ "by setting the EMAIL_ALLOW_DELETION environment variable to 'true' (or -Demail.allow-deletion=true). "
-			+ "When disabled, this tool returns an error and no deletion occurs; suggest moveEmail to a Trash folder instead. "
-			+ "Even when enabled, prefer moveEmail to a Trash folder since deletion is permanent. "
-			+ "Only use this when the user explicitly asks to permanently delete. "
-			+ "Call listAccounts first to discover available accounts.")
+	@Tool(description = "Delete an email: moves it to the account's trash folder (see getTrashFolder), or removes it "
+			+ "permanently when the account has no trash folder. DISABLED BY DEFAULT — the server administrator must "
+			+ "explicitly opt in by setting the EMAIL_ALLOW_DELETION environment variable to 'true' "
+			+ "(or -Demail.allow-deletion=true). When disabled, this tool returns an error and nothing happens; suggest "
+			+ "moveEmail to the trash folder instead. Even when enabled, prefer moveEmail, and only use this when the "
+			+ "user explicitly asks to delete. " + "Call listAccounts first to discover available accounts.")
 	String deleteEmail(@ToolArg(description = "Account name, e.g. 'work' or 'gmail'")
 	String account, @ToolArg(description = "Folder name")
 	String folder, @ToolArg(description = "UID of the email to delete")

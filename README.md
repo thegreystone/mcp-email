@@ -48,7 +48,9 @@ For more information, see my [blog](https://hirt.se/blog/?p=1596).
 | `batchMoveEmails` | Move emails to multiple target folders in one call |
 | `moveToSpam` | Move emails to the cached spam folder |
 | `setEmailFlags` | Set any combination of seen, answered, forwarded, and flagged/starred on one or more emails |
-| `deleteEmail` | Permanently delete an email. **Disabled by default** — opt in via `EMAIL_ALLOW_DELETION=true` (see [Enabling permanent deletion](#enabling-permanent-deletion)) |
+| `deleteEmail` | Delete an email: moved to the trash folder, or removed permanently if the account has none. **Disabled by default** — opt in via `EMAIL_ALLOW_DELETION=true` (see [Enabling permanent deletion](#enabling-permanent-deletion)) |
+| `getTrashFolder` | Resolve and cache the trash folder that `deleteEmail` moves messages to (see [Special folders](#special-folders)) |
+| `setTrashFolder` | Override the trash folder for this session |
 | **Spam** | |
 | `getSpamFolder` | Resolve and cache the spam/junk folder (configured, special-use flag, or well-known name; see [Special folders](#special-folders)) |
 | `setSpamFolder` | Override the spam folder for this session |
@@ -121,6 +123,7 @@ Accounts are defined by convention: `EMAIL_ACCOUNTS_<NAME>_IMAP_*` and `EMAIL_AC
 | `EMAIL_ACCOUNTS_<NAME>_SMTP_SSL` | no | `false`, or `true` on port 465 | |
 | `EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER` | no | auto-detected | `INBOX.INBOX.Drafts` |
 | `EMAIL_ACCOUNTS_<NAME>_SPAM_FOLDER` | no | auto-detected | `INBOX.INBOX.Junk` |
+| `EMAIL_ACCOUNTS_<NAME>_TRASH_FOLDER` | no | auto-detected | `INBOX.INBOX.Trash` |
 
 For Gmail, create an [App Password](https://myaccount.google.com/apppasswords).
 
@@ -144,22 +147,23 @@ port rule. Set `SMTP_STARTTLS=false` only for a server that really has no TLS at
 
 ### Special folders
 
-`saveDraft` and `moveToSpam` need to know the account's Drafts and spam folders. Most servers need no
-configuration; the folder is resolved on first use, in this order:
+`saveDraft`, `moveToSpam` and `deleteEmail` need to know the account's Drafts, spam and trash folders. Most
+servers need no configuration; each folder is resolved on first use, in this order:
 
-1. A folder set for the current session with `setDraftsFolder` / `setSpamFolder`.
-2. The configured `EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER` / `EMAIL_ACCOUNTS_<NAME>_SPAM_FOLDER`. A configured
+1. A folder set for the current session with `setDraftsFolder` / `setSpamFolder` / `setTrashFolder`.
+2. The configured `EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER` / `_SPAM_FOLDER` / `_TRASH_FOLDER`. A configured
    folder that does not exist on the server is reported as an error rather than silently falling back, so
    the LLM can point out the misconfiguration and work around it with the `set*Folder` tool for the session.
-3. The folder the server flags as `\Drafts` / `\Junk` (RFC 6154 special-use, supported by Gmail, Dovecot,
-   Exchange and most others).
-4. Well-known names such as `Drafts`, `[Gmail]/Drafts`, `INBOX.Drafts`, `Spam`, `Junk`, `[Gmail]/Spam`.
-5. Any folder whose last path element is `Drafts`, `Draft`, `Spam`, `Junk`, `Junk E-mail`, `Bulk Mail` or
-   `Junk Email`, which covers providers that nest everything under a namespace prefix (e.g. OVH's
-   `INBOX.INBOX.Drafts`).
+3. The folder the server flags as `\Drafts` / `\Junk` / `\Trash` (RFC 6154 special-use, supported by Gmail,
+   Dovecot, Exchange and most others).
+4. Well-known names such as `Drafts`, `[Gmail]/Drafts`, `INBOX.Drafts`, `Spam`, `Junk`, `[Gmail]/Spam`,
+   `Trash`, `[Gmail]/Trash`, `Deleted Items`.
+5. Any folder whose last path element is `Drafts`, `Draft`, `Spam`, `Junk`, `Junk E-mail`, `Bulk Mail`,
+   `Junk Email`, `Trash`, `Deleted Items`, `Deleted Messages` or a few localized trash names, which covers
+   providers that nest everything under a namespace prefix (e.g. OVH's `INBOX.INBOX.Drafts`).
 
 Set the variable explicitly if your provider uses a name none of the heuristics find, or if auto-detection
-picks the wrong folder.
+picks the wrong folder. `deleteEmail` removes the message permanently only when no trash folder is found.
 
 ### Network timeout
 

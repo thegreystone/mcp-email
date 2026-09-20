@@ -60,6 +60,7 @@ public class EmailService {
 	private final Map<String, Store> imapStores = new ConcurrentHashMap<>();
 	private final Map<String, String> cachedSpamFolders = new ConcurrentHashMap<>();
 	private final Map<String, String> cachedDraftsFolders = new ConcurrentHashMap<>();
+	private final Map<String, String> cachedTrashFolders = new ConcurrentHashMap<>();
 
 	// ── Account validation ──────────────────────────────────────────────
 
@@ -295,9 +296,14 @@ public class EmailService {
 		}
 
 		for (var candidate : candidates) {
-			if (store.getFolder(candidate).exists()) {
-				cache.put(account, candidate);
-				return candidate;
+			try {
+				if (store.getFolder(candidate).exists()) {
+					cache.put(account, candidate);
+					return candidate;
+				}
+			} catch (MessagingException e) {
+				// Some servers reject a LIST for a name they consider malformed (e.g. the brackets in
+				// [Gmail]/Trash). That only means this candidate is not one of their folders.
 			}
 		}
 
@@ -342,6 +348,22 @@ public class EmailService {
 
 	public void setSpamFolder(String account, String folderName) {
 		cachedSpamFolders.put(account, folderName);
+	}
+
+	// ── Trash folder detection ─────────────────────────────────────────
+
+	private static final List<String> TRASH_FOLDER_CANDIDATES = List.of("Trash", "[Gmail]/Trash", "Deleted Items",
+			"Deleted", "Deleted Messages", "INBOX.Trash");
+	private static final List<String> TRASH_FOLDER_LEAF_NAMES = List.of("Trash", "Deleted Items", "Deleted",
+			"Deleted Messages", "Papperskorg", "Papierkorb", "Corbeille");
+
+	public String getTrashFolder(String account) throws MessagingException {
+		return resolveSpecialFolder(account, cachedTrashFolders, getAccountConfig(account).trashFolder(), "trash",
+				"setTrashFolder", "\\Trash", TRASH_FOLDER_CANDIDATES, TRASH_FOLDER_LEAF_NAMES);
+	}
+
+	public void setTrashFolder(String account, String folderName) {
+		cachedTrashFolders.put(account, folderName);
 	}
 
 	public void moveToSpam(String account, String sourceFolderName, long uid, boolean markRead)
@@ -839,21 +861,15 @@ public class EmailService {
 
 	// ── Delete email (move to Trash) ─────────────────────────────────────
 
+	/**
+	 * Moves the message to the account's trash folder (see {@link #getTrashFolder}); when no trash
+	 * folder can be resolved, removes it outright. A configured trash folder that does not exist is
+	 * an error, not a fall-through to permanent removal.
+	 */
 	public void deleteEmail(String account, String folderName, long uid) throws MessagingException {
 		var store = getImapStore(account);
-		Folder trashFolder = null;
-		for (var name : List.of("[Gmail]/Trash", "Trash", "Deleted Items", "Deleted")) {
-			var candidate = store.getFolder(name);
-			try {
-				if (candidate.exists()) {
-					trashFolder = candidate;
-					break;
-				}
-			} catch (MessagingException e) {
-				// Some servers reject a LIST for a name they consider malformed (e.g. the brackets in
-				// [Gmail]/Trash). That only means this candidate is not their trash folder.
-			}
-		}
+		var trashName = getTrashFolder(account);
+		var trashFolder = trashName != null && !trashName.equals(folderName) ? store.getFolder(trashName) : null;
 
 		var sourceFolder = store.getFolder(folderName);
 		sourceFolder.open(Folder.READ_WRITE);

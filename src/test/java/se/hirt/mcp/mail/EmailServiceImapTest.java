@@ -126,6 +126,26 @@ class EmailServiceImapTest {
 	}
 
 	@Test
+	void deleteMovesToTheResolvedTrashFolder() throws Exception {
+		// No special-use flags on this server, so the trash folder is found by its well-known name.
+		service.createFolder(ACCOUNT, "Trash");
+
+		assertEquals("Trash", service.getTrashFolder(ACCOUNT));
+		service.deleteEmail(ACCOUNT, "INBOX", uidOf("A"));
+
+		assertEquals(List.of("B", "C"), subjectsIn("INBOX"));
+		assertEquals(List.of("A"), subjectsIn("Trash"), "deleted message should be in Trash, not gone");
+	}
+
+	@Test
+	void deleteFindsTrashUnderANamespacePrefix() throws Exception {
+		// The OVH-style layout: everything nested under INBOX, so only the leaf name matches.
+		service.createFolder(ACCOUNT, "INBOX.Papperskorg");
+
+		assertEquals("INBOX.Papperskorg", service.getTrashFolder(ACCOUNT));
+	}
+
+	@Test
 	void moveWorksWhenNothingElseIsFlagged() throws Exception {
 		service.moveEmail(ACCOUNT, "INBOX", uidOf("A"), "Archive", true);
 
@@ -358,6 +378,10 @@ class EmailServiceImapTest {
 			}
 
 			public Optional<String> spamFolder() {
+				return Optional.empty();
+			}
+
+			public Optional<String> trashFolder() {
 				return Optional.empty();
 			}
 		};
