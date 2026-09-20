@@ -243,18 +243,25 @@ public class EmailTools {
 				sb.append("Attachments: ").append(String.join(", ", email.attachments())).append("\n");
 			}
 			var body = email.body();
-			if (body != null && htmlToMarkdown.orElse(true)) {
-				if (email.html()) {
-					body = htmlToMarkdown(body);
-				} else {
-					body = stripZeroWidthChars(body);
-				}
+			if (htmlToMarkdown.orElse(true)) {
+				body = renderBody(body, email.html());
 			}
 			sb.append("\n").append(body != null ? body : "(no body)");
 			return sb.toString();
 		} catch (Exception e) {
 			return "Error reading email: " + e.getMessage();
 		}
+	}
+
+	/**
+	 * The body as the model should see it: HTML converted to markdown, plain text with the
+	 * invisible characters spammers hide in it stripped. Null stays null.
+	 */
+	private static String renderBody(String body, boolean html) {
+		if (body == null) {
+			return null;
+		}
+		return html ? htmlToMarkdown(body) : stripZeroWidthChars(body);
 	}
 
 	private static String stripZeroWidthChars(String text) {
@@ -800,6 +807,7 @@ public class EmailTools {
 	}
 
 	@Tool(description = "Get the next (oldest) unread email with ALL headers and body. "
+			+ "HTML bodies are converted to markdown, as in readEmail. "
 			+ "Returns the email's stable UID for use with moveToSpam, moveEmail, markEmail, etc. "
 			+ "Useful for spam triage: inspect headers like Return-Path, Received, "
 			+ "Authentication-Results, DKIM-Signature, SPF, and DMARC to assess legitimacy. "
@@ -843,7 +851,8 @@ public class EmailTools {
 			}
 
 			sb.append("\n--- BODY ---\n");
-			sb.append(email.body() != null ? email.body() : "(no body)");
+			var body = renderBody(email.body(), email.html());
+			sb.append(body != null ? body : "(no body)");
 
 			return sb.toString();
 		} catch (Exception e) {

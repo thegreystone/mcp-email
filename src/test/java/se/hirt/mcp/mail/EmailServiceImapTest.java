@@ -244,6 +244,31 @@ class EmailServiceImapTest {
 	}
 
 	@Test
+	void nextUnreadEmailRendersHtmlAsMarkdown() throws Exception {
+		// Mark the plain-text fixtures read so the HTML message is the oldest unread one.
+		service.setMessageFlags(ACCOUNT, "INBOX", List.of(uidOf("A"), uidOf("B"), uidOf("C")), true, null, null, null);
+		var message = new MimeMessage(Session.getInstance(new Properties()));
+		message.setFrom("sender@example.com");
+		message.setRecipients(Message.RecipientType.TO, USER);
+		message.setSubject("Newsletter");
+		message.setContent(
+				"<html><body><p>Hello <b>reader</b>,</p>"
+						+ "<p>See <a href=\"https://example.com/offer\">the offer</a>.</p></body></html>",
+				"text/html; charset=UTF-8");
+		message.saveChanges();
+		greenMail.setUser(USER, USER, PASSWORD).deliver(message);
+
+		var tools = new EmailTools();
+		tools.emailService = service;
+		var rendered = tools.getNextUnreadEmail(ACCOUNT, "INBOX");
+
+		assertTrue(rendered.contains("Subject: Newsletter"), rendered);
+		assertTrue(rendered.contains("Hello **reader**,"), "HTML should be rendered as markdown:\n" + rendered);
+		assertTrue(rendered.contains("[the offer](https://example.com/offer)"), rendered);
+		assertFalse(rendered.contains("<p>") || rendered.contains("<html"), "no raw HTML tags:\n" + rendered);
+	}
+
+	@Test
 	void sendEmailOverPlainSmtpDeliversToInbox() throws Exception {
 		service.sendEmail(ACCOUNT, USER, null, null, "Sent via SMTP", "hello");
 

@@ -38,7 +38,7 @@ For more information, see my [blog](https://hirt.se/blog/?p=1596).
 | `selfTestPdf` | Diagnostic: verify PDF text extraction works in this environment |
 | `searchEmails` | Search by subject, sender, or body |
 | `getUnreadCount` | Count unread emails in a folder |
-| `getNextUnreadEmail` | Get oldest unread email with all headers |
+| `getNextUnreadEmail` | Get oldest unread email with all headers. HTML bodies are converted to markdown |
 | **Triage** | |
 | `triageCompact` | Compact triage — from, subject, spam score, flags (start here) |
 | `triageEmails` | Full-header triage — use when compact is not enough |

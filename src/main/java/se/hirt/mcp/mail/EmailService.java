@@ -1281,7 +1281,7 @@ public class EmailService {
 	}
 
 	public record FullEmail(long uid, int unreadLeft, boolean answered, boolean forwarded, Map<String, String> headers,
-			String body, List<String> attachments, int size) {
+			String body, boolean html, List<String> attachments, int size) {
 	}
 
 	public FullEmail getNextUnreadEmail(String account, String folderName) throws MessagingException, IOException {
@@ -1317,14 +1317,15 @@ public class EmailService {
 				headers.merge(h.getName(), h.getValue(), (old, val) -> old + "\n" + val);
 			}
 
-			var extracted2 = extractText(message);
-			var body = extracted2 != null ? extracted2.text() : null;
+			var extracted = extractText(message);
+			var body = extracted != null ? extracted.text() : null;
+			boolean isHtml = extracted != null && extracted.html();
 			var attachments = extractAttachmentNames(message);
 
 			boolean answered = message.isSet(Flags.Flag.ANSWERED);
 			boolean forwarded = isForwarded(message);
-			return new FullEmail(uf.getUID(message), messages.length, answered, forwarded, headers, body, attachments,
-					message.getSize());
+			return new FullEmail(uf.getUID(message), messages.length, answered, forwarded, headers, body, isHtml,
+					attachments, message.getSize());
 		} finally {
 			folder.close(false);
 		}
