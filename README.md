@@ -440,3 +440,10 @@ have no signing convention.
 - **Authentication errors**: for Gmail, you need an [App Password](https://myaccount.google.com/apppasswords), not your regular password. Make sure 2-Step Verification is enabled on your Google account first.
 - **Build fails** (building from source): ensure `JAVA_HOME` points to JDK 21+. The system `java` on PATH may differ from what Maven uses.
 - **"Unknown account" errors**: call `listAccounts` first to see which accounts are configured. Account names are lowercase as defined in the environment variables (e.g., `work`, `gmail`).
+
+## License
+
+The server is released under the BSD 3-Clause License, see [LICENSE](LICENSE). The release artifacts bundle
+third-party libraries under their own licenses; they are listed, with their licenses, in
+[THIRD-PARTY.md](THIRD-PARTY.md). Note in particular that PDF text extraction uses iText 7, which is
+licensed under the GNU Affero General Public License v3.0; see the note in that file.
