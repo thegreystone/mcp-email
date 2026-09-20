@@ -120,6 +120,49 @@ public class EmailService {
 	}
 
 	/**
+	 * An optional setting as the user meant it. Blank means unset. So does a literal
+	 * {@code ${...}}: an MCP bundle host may pass an empty optional setting through as its
+	 * unexpanded placeholder.
+	 */
+	static Optional<String> setting(Optional<String> value) {
+		return value.map(String::trim).filter(s -> !s.isEmpty() && !s.startsWith("${"));
+	}
+
+	/**
+	 * The From address for the account: the configured {@code from}, else the SMTP username. Parsed
+	 * leniently, so a login that is not an email address still yields something rather than failing
+	 * every send; a value with more than one address is rejected.
+	 */
+	static InternetAddress fromAddress(EmailConfig.AccountConfig ac) throws MessagingException {
+		var value = setting(ac.from()).orElse(ac.smtp().username());
+		var parsed = InternetAddress.parse(value, false);
+		if (parsed.length != 1) {
+			throw new MessagingException("The From address must be a single address, got: " + value);
+		}
+		return parsed[0];
+	}
+
+	/**
+	 * The addresses that belong to this account, lower-cased: the From address, and the IMAP and
+	 * SMTP usernames when they are email addresses. Reply-all leaves these out of the Cc list.
+	 */
+	private static Set<String> ownAddresses(EmailConfig.AccountConfig ac) throws MessagingException {
+		var own = new HashSet<String>();
+		own.add(fromAddress(ac).getAddress().toLowerCase(Locale.ROOT));
+		for (var username : List.of(ac.smtp().username(), ac.imap().username())) {
+			if (username != null && username.contains("@")) {
+				own.add(username.trim().toLowerCase(Locale.ROOT));
+			}
+		}
+		return own;
+	}
+
+	private static boolean isOwnAddress(Address addr, Set<String> own) {
+		var address = addr instanceof InternetAddress ia ? ia.getAddress() : addr.toString();
+		return address != null && own.contains(address.toLowerCase(Locale.ROOT));
+	}
+
+	/**
 	 * Whether IMAP uses TLS from the first byte. An explicit setting wins; otherwise it follows the
 	 * port, so that port 143 (plain IMAP) works without also having to set the flag, as it would in
 	 * a mail client.
@@ -272,9 +315,7 @@ public class EmailService {
 
 		var store = getImapStore(account);
 
-		// Blank means unset. So does a literal ${...}: an MCP bundle host may pass an empty optional setting
-		// through as its unexpanded placeholder.
-		var configuredName = configured.filter(s -> !s.isBlank() && !s.startsWith("${")).orElse(null);
+		var configuredName = setting(configured).orElse(null);
 		if (configuredName != null) {
 			if (!store.getFolder(configuredName).exists()) {
 				throw new MessagingException("The configured " + kind + " folder '" + configuredName
@@ -402,7 +443,7 @@ public class EmailService {
 		var ac = getAccountConfig(account);
 		var session = Session.getInstance(new Properties());
 		var draft = new MimeMessage(session);
-		draft.setFrom(new InternetAddress(ac.smtp().username()));
+		draft.setFrom(fromAddress(ac));
 		draft.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to));
 		if (cc != null) {
 			draft.setRecipients(Message.RecipientType.CC, InternetAddress.parse(cc));
@@ -960,7 +1001,7 @@ public class EmailService {
 		});
 
 		var message = new MimeMessage(session);
-		message.setFrom(new InternetAddress(smtpCfg.username()));
+		message.setFrom(fromAddress(ac));
 		return message;
 	}
 
@@ -1020,22 +1061,17 @@ public class EmailService {
 				reply.setRecipients(Message.RecipientType.TO, original.getFrom());
 			}
 
-			// Reply-All: add original To and Cc as Cc, excluding our own address
+			// Reply-All: add original To and Cc as Cc, excluding our own addresses
 			if (replyAll) {
-				var senderAddress = ac.smtp().username().toLowerCase();
+				var own = ownAddresses(ac);
 				var ccList = new ArrayList<Address>();
-				var origTo = original.getRecipients(Message.RecipientType.TO);
-				if (origTo != null) {
-					for (var addr : origTo) {
-						if (!addr.toString().toLowerCase().contains(senderAddress)) {
-							ccList.add(addr);
-						}
+				for (var type : List.of(Message.RecipientType.TO, Message.RecipientType.CC)) {
+					var recipients = original.getRecipients(type);
+					if (recipients == null) {
+						continue;
 					}
-				}
-				var origCc = original.getRecipients(Message.RecipientType.CC);
-				if (origCc != null) {
-					for (var addr : origCc) {
-						if (!addr.toString().toLowerCase().contains(senderAddress)) {
+					for (var addr : recipients) {
+						if (!isOwnAddress(addr, own)) {
 							ccList.add(addr);
 						}
 					}

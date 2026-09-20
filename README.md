@@ -121,11 +121,17 @@ Accounts are defined by convention: `EMAIL_ACCOUNTS_<NAME>_IMAP_*` and `EMAIL_AC
 | `EMAIL_ACCOUNTS_<NAME>_SMTP_PORT` | no | `587` | `465` |
 | `EMAIL_ACCOUNTS_<NAME>_SMTP_STARTTLS` | no | `true` | |
 | `EMAIL_ACCOUNTS_<NAME>_SMTP_SSL` | no | `false`, or `true` on port 465 | |
+| `EMAIL_ACCOUNTS_<NAME>_FROM` | no | the SMTP username | `Jane Doe <jane@example.com>` |
 | `EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER` | no | auto-detected | `INBOX.INBOX.Drafts` |
 | `EMAIL_ACCOUNTS_<NAME>_SPAM_FOLDER` | no | auto-detected | `INBOX.INBOX.Junk` |
 | `EMAIL_ACCOUNTS_<NAME>_TRASH_FOLDER` | no | auto-detected | `INBOX.INBOX.Trash` |
 
 For Gmail, create an [App Password](https://myaccount.google.com/apppasswords).
+
+`FROM` is the From address on everything the account sends or drafts, as a bare address or as
+`Display Name <address>`. It defaults to the SMTP username, which is the address itself for most providers;
+set it when the SMTP login is not an email address, to send from an alias, or to add a display name. Reply-all
+leaves the account's own addresses (the From address and the usernames) out of the recipients.
 
 You can define as many accounts as needed. For example, to add a `work` and `gmail` account, set environment
 variables for both `EMAIL_ACCOUNTS_WORK_*` and `EMAIL_ACCOUNTS_GMAIL_*`.
@@ -212,10 +218,11 @@ The easiest way is the MCP Bundle. There is no config file to edit:
 3. Installing does not ask for the account details, so open the extension's settings: in
    *Settings → Extensions*, find *Email MCP Server* and click *Configure*. Fill in the IMAP and SMTP server,
    username and password (passwords go to the operating system keychain). For Gmail, use an
-   [App Password](https://myaccount.google.com/apppasswords). The two optional fields, *Drafts folder* and
-   *Spam folder*, are only needed for providers where auto-detection picks the wrong folder (see
-   [Special folders](#special-folders)). Leave the two switches, *Allow sending* and *Allow permanent deletion*,
-   off unless you need them. Save.
+   [App Password](https://myaccount.google.com/apppasswords). The optional fields can usually stay empty:
+   *From* only if the SMTP username is not your email address or you want a display name, and the
+   *Drafts*, *Spam* and *Trash folder* fields only for providers where auto-detection picks the wrong folder
+   (see [Special folders](#special-folders)). Leave the two switches, *Allow sending* and
+   *Allow permanent deletion*, off unless you need them. Save.
 
 4. Make sure the extension is enabled and start a new chat. The email tools appear in the tool list; the
    account is called `default` in the tools.

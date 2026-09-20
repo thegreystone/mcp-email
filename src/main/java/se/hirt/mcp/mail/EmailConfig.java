@@ -56,6 +56,15 @@ public interface EmailConfig {
 		SmtpConfig smtp();
 
 		/**
+		 * The From address of everything this account sends or drafts: a bare address, or
+		 * {@code Display Name <address>}. Defaults to the SMTP username, which is the address
+		 * itself for most providers. Needed when the SMTP login is not an email address, or to send
+		 * from an alias or with a display name. {@code EMAIL_ACCOUNTS_<NAME>_FROM} in the
+		 * environment.
+		 */
+		Optional<String> from();
+
+		/**
 		 * Full IMAP name of the Drafts folder, e.g. {@code INBOX.INBOX.Drafts}. When set, it is
 		 * used as is and auto-detection is skipped; a name that does not exist on the server is
 		 * reported as an error so that the folder can be overridden for the session with the

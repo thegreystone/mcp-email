@@ -297,6 +297,42 @@ class EmailServiceImapTest {
 	}
 
 	@Test
+	void configuredFromAddressWithDisplayNameIsUsed() throws Exception {
+		service.config = configWithFrom("Test Sender <sender@localhost>");
+
+		service.sendEmail(ACCOUNT, USER, null, null, "From check", "hello");
+
+		assertTrue(greenMail.waitForIncomingEmail(5_000, 1));
+		var received = findReceived("From check");
+		assertEquals("Test Sender <sender@localhost>", received.getFrom()[0].toString());
+	}
+
+	@Test
+	void replyAllLeavesOwnAddressesOutButKeepsTheOthers() throws Exception {
+		service.config = configWithFrom("Me <me@example.com>");
+		// A message to us at two of our addresses plus a third party, from someone else.
+		var original = new MimeMessage(Session.getInstance(new Properties()));
+		original.setFrom("other@example.com");
+		original.setRecipients(Message.RecipientType.TO, "me@example.com, " + USER);
+		original.setRecipients(Message.RecipientType.CC, "third@example.com, me.example.com@elsewhere.org");
+		original.setSubject("Group thread");
+		original.setText("hi all");
+		original.saveChanges();
+		greenMail.setUser(USER, USER, PASSWORD).deliver(original);
+
+		service.replyEmail(ACCOUNT, "INBOX", uidOf("Group thread"), "reply body", true, null, null);
+
+		assertTrue(greenMail.waitForIncomingEmail(5_000, 1));
+		var reply = findReceived("Re: Group thread");
+		assertEquals("other@example.com", reply.getRecipients(Message.RecipientType.TO)[0].toString());
+		var cc = java.util.Arrays.stream(reply.getRecipients(Message.RecipientType.CC)).map(Object::toString).sorted()
+				.toList();
+		// me@example.com (the From) and user@localhost (the username) are ours; the near-miss
+		// "me.example.com@elsewhere.org" is not, and must not be dropped by a substring match.
+		assertEquals(List.of("me.example.com@elsewhere.org", "third@example.com"), cc);
+	}
+
+	@Test
 	void starttlsIsRequiredNotOpportunistic() throws Exception {
 		// GreenMail's plain SMTP server does not offer STARTTLS. With starttls=true the send must be refused
 		// instead of silently falling back to an unencrypted login.
@@ -318,6 +354,17 @@ class EmailServiceImapTest {
 
 	private static EmailConfig config(
 		int imapPort, int smtpPort, boolean smtpStarttls, boolean smtpSsl, int networkTimeoutSeconds) {
+		return config(imapPort, smtpPort, smtpStarttls, smtpSsl, networkTimeoutSeconds, Optional.empty());
+	}
+
+	private static EmailConfig configWithFrom(String from) {
+		return config(ServerSetupTest.IMAP.getPort(), ServerSetupTest.SMTP.getPort(), false, false, 60,
+				Optional.of(from));
+	}
+
+	private static EmailConfig config(
+		int imapPort, int smtpPort, boolean smtpStarttls, boolean smtpSsl, int networkTimeoutSeconds,
+		Optional<String> from) {
 		var imap = new EmailConfig.ImapConfig() {
 			public String host() {
 				return "localhost";
@@ -384,6 +431,10 @@ class EmailServiceImapTest {
 			public Optional<String> trashFolder() {
 				return Optional.empty();
 			}
+
+			public Optional<String> from() {
+				return from;
+			}
 		};
 		return new EmailConfig() {
 			public Map<String, AccountConfig> accounts() {
@@ -394,6 +445,15 @@ class EmailServiceImapTest {
 				return networkTimeoutSeconds;
 			}
 		};
+	}
+
+	private static MimeMessage findReceived(String subject) throws Exception {
+		for (var m : greenMail.getReceivedMessages()) {
+			if (subject.equals(m.getSubject())) {
+				return m;
+			}
+		}
+		throw new AssertionError("No received message with subject " + subject);
 	}
 
 	/** A second, independent IMAP session standing in for the user's regular mail client. */
