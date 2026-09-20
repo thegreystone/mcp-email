@@ -1157,8 +1157,60 @@ public class EmailService {
 	public record EmailSummary(long uid, boolean answered, boolean forwarded, Map<String, String> headers, int size) {
 	}
 
+	/**
+	 * @param spamScore
+	 *            the filter's score, or null when no header carried one
+	 * @param spamFlagged
+	 *            the filter's verdict ({@code X-Spam-Flag: YES} or {@code X-Spam-Status: Yes}),
+	 *            which is reported separately so a verdict shows even when the score format is
+	 *            unknown
+	 */
 	public record CompactEmailSummary(long uid, String from, String subject, String date, boolean answered,
-			boolean forwarded, double spamScore, boolean hasListUnsubscribe, boolean fromReplyToMismatch, int size) {
+			boolean forwarded, Double spamScore, boolean spamFlagged, boolean hasListUnsubscribe,
+			boolean fromReplyToMismatch, int size) {
+	}
+
+	private static final java.util.regex.Pattern LEADING_NUMBER = java.util.regex.Pattern
+			.compile("^\\s*(?:score=|hits=)?([-+]?\\d+(?:\\.\\d+)?)");
+	private static final java.util.regex.Pattern STATUS_SCORE = java.util.regex.Pattern
+			.compile("(?:score|hits)=([-+]?\\d+(?:\\.\\d+)?)");
+
+	/**
+	 * The spam score from the headers filters commonly set. {@code X-Spam-Score} is rarely a bare
+	 * number: Amavis writes {@code 3.2 (***)}, some rspamd and Exim setups {@code 3.21 / 5.0}, so
+	 * only the leading number is taken. {@code X-Spam-Status} carries {@code score=} (SpamAssassin)
+	 * or {@code hits=} (older installs).
+	 */
+	static Double parseSpamScore(String xSpamScore, String xSpamStatus) {
+		if (xSpamScore != null) {
+			var m = LEADING_NUMBER.matcher(xSpamScore);
+			if (m.find()) {
+				return Double.valueOf(m.group(1));
+			}
+		}
+		if (xSpamStatus != null) {
+			var m = STATUS_SCORE.matcher(xSpamStatus);
+			if (m.find()) {
+				return Double.valueOf(m.group(1));
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * The filter's verdict: {@code X-Spam-Flag: YES}, or an {@code X-Spam-Status} starting with
+	 * Yes.
+	 */
+	static boolean parseSpamFlag(String xSpamFlag, String xSpamStatus) {
+		if (xSpamFlag != null && xSpamFlag.trim().equalsIgnoreCase("YES")) {
+			return true;
+		}
+		return xSpamStatus != null && xSpamStatus.trim().regionMatches(true, 0, "Yes", 0, 3);
+	}
+
+	private static String firstHeader(Message m, String name) throws MessagingException {
+		var values = m.getHeader(name);
+		return values != null && values.length > 0 ? values[0] : null;
 	}
 
 	public List<CompactEmailSummary> summarizeEmailsCompact(
@@ -1217,30 +1269,9 @@ public class EmailService {
 				var subject = m.getSubject() != null ? m.getSubject() : "(no subject)";
 				var date = m.getSentDate() != null ? m.getSentDate().toString() : "(no date)";
 
-				double spamScore = 0;
-				var scoreHeader = m.getHeader("X-Spam-Score");
-				if (scoreHeader != null && scoreHeader.length > 0) {
-					try {
-						spamScore = Double.parseDouble(scoreHeader[0].trim());
-					} catch (NumberFormatException ignored) {
-					}
-				}
-				if (spamScore == 0) {
-					var statusHeader = m.getHeader("X-Spam-Status");
-					if (statusHeader != null && statusHeader.length > 0) {
-						var status = statusHeader[0];
-						int idx = status.indexOf("score=");
-						if (idx >= 0) {
-							var end = status.indexOf(' ', idx + 6);
-							if (end < 0)
-								end = status.length();
-							try {
-								spamScore = Double.parseDouble(status.substring(idx + 6, end));
-							} catch (NumberFormatException ignored) {
-							}
-						}
-					}
-				}
+				var spamStatus = firstHeader(m, "X-Spam-Status");
+				var spamScore = parseSpamScore(firstHeader(m, "X-Spam-Score"), spamStatus);
+				var spamFlagged = parseSpamFlag(firstHeader(m, "X-Spam-Flag"), spamStatus);
 
 				var listUnsub = m.getHeader("List-Unsubscribe");
 				boolean hasListUnsubscribe = listUnsub != null && listUnsub.length > 0;
@@ -1259,7 +1290,7 @@ public class EmailService {
 				boolean answered = m.isSet(Flags.Flag.ANSWERED);
 				boolean forwarded = isForwarded(m);
 				result.add(new CompactEmailSummary(uf.getUID(m), from, subject, date, answered, forwarded, spamScore,
-						hasListUnsubscribe, fromReplyToMismatch, m.getSize()));
+						spamFlagged, hasListUnsubscribe, fromReplyToMismatch, m.getSize()));
 			}
 			return result;
 		} finally {

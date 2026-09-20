@@ -289,6 +289,32 @@ class EmailServiceImapTest {
 	}
 
 	@Test
+	void compactTriageShowsAmavisStyleScoreAndVerdict() throws Exception {
+		// Amavis: a decorated X-Spam-Score and an X-Spam-Flag, but no X-Spam-Status to fall back on.
+		var message = new MimeMessage(Session.getInstance(new Properties()));
+		message.setFrom("spammer@example.com");
+		message.setRecipients(Message.RecipientType.TO, USER);
+		message.setSubject("Cheap watches");
+		message.setText("buy now");
+		message.setHeader("X-Spam-Score", "7.3 (*******)");
+		message.setHeader("X-Spam-Flag", "YES");
+		message.saveChanges();
+		greenMail.setUser(USER, USER, PASSWORD).deliver(message);
+
+		var tools = new EmailTools();
+		tools.emailService = service;
+		var triage = tools.triageCompact(ACCOUNT, "INBOX", true, 0, 10);
+
+		var block = triage.substring(triage.indexOf("Cheap watches"));
+		block = block.substring(0, block.indexOf("\n\n"));
+		assertTrue(block.contains("Spam score: 7.3"), "score should be parsed from the decorated header:\n" + block);
+		assertTrue(block.contains("Spam-Flag: YES"), "the filter's verdict should be shown:\n" + block);
+		// The plain fixtures carry no spam headers and must not show any spam line.
+		var plain = triage.substring(triage.indexOf("[UID"), triage.indexOf("Cheap watches"));
+		assertFalse(plain.contains("Spam"), plain);
+	}
+
+	@Test
 	void sendEmailOverPlainSmtpDeliversToInbox() throws Exception {
 		service.sendEmail(ACCOUNT, USER, null, null, "Sent via SMTP", "hello");
 

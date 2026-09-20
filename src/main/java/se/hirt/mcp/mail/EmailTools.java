@@ -742,7 +742,8 @@ public class EmailTools {
 	}
 
 	@Tool(description = "Compact triage of emails — returns only decision-relevant fields per email: "
-			+ "UID, from, subject, date, answered/forwarded status, spam score (numeric), "
+			+ "UID, from, subject, date, answered/forwarded status, spam score (numeric, when a filter set one) and "
+			+ "the filter's verdict (Spam-Flag: YES), "
 			+ "has-list-unsubscribe (boolean), and from/reply-to mismatch (boolean). "
 			+ "Uses ~80% fewer tokens than triageEmails by stripping Authentication-Results, DKIM, SPF, "
 			+ "and other verbose headers. "
@@ -782,8 +783,10 @@ public class EmailTools {
 					sb.append("  Replied: yes\n");
 				if (s.forwarded())
 					sb.append("  Forwarded: yes\n");
-				if (s.spamScore() != 0)
-					sb.append("  Spam: ").append(s.spamScore()).append("\n");
+				if (s.spamScore() != null)
+					sb.append("  Spam score: ").append(s.spamScore()).append("\n");
+				if (s.spamFlagged())
+					sb.append("  Spam-Flag: YES\n");
 				if (s.hasListUnsubscribe())
 					sb.append("  List-Unsubscribe: yes\n");
 				if (s.fromReplyToMismatch())
