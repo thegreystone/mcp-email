@@ -124,14 +124,14 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          mvn -B test-compile failsafe:integration-test -Dnative.image.path=target/mcp-email-server-${VERSION}-runner
+          mvn -B test-compile failsafe:integration-test failsafe:verify -Dnative.image.path=target/mcp-email-server-${VERSION}-runner
 
       - name: Sanity test native binary (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          mvn -B test-compile failsafe:integration-test -Dnative.image.path=target/mcp-email-server-${VERSION}-runner.exe
+          mvn -B test-compile failsafe:integration-test failsafe:verify -Dnative.image.path=target/mcp-email-server-${VERSION}-runner.exe
 
       - name: Rename binary (Unix)
         if: runner.os != 'Windows'

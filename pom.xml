@@ -184,6 +184,14 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
+            <!-- Runs the *IT sanity test against the native binary in the release workflow:
+                 `mvn test-compile failsafe:integration-test failsafe:verify -Dnative.image.path=...`.
+                 Not bound to the lifecycle, so `mvn package` and `mvn verify` do not run it. The verify goal
+                 is what fails the build; integration-test alone only records the results. -->
+            <plugin>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>${surefire-plugin.version}</version>
+            </plugin>
         </plugins>
     </build>
 
