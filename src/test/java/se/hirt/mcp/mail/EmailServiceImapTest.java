@@ -208,6 +208,42 @@ class EmailServiceImapTest {
 	}
 
 	@Test
+	void nonAsciiAttachmentNamesAreDecodedInBothEncodings() throws Exception {
+		var bytes = new byte[] {9, 8, 7};
+
+		var body = new MimeBodyPart();
+		body.setText("Swedish file names.");
+		// RFC 2047 encoded-word inside the filename value, as Outlook and Gmail send it.
+		var encodedWord = new MimeBodyPart();
+		encodedWord.setDataHandler(new DataHandler(new ByteArrayDataSource(bytes, "application/pdf")));
+		encodedWord.setHeader("Content-Disposition",
+				"attachment; filename=\"=?UTF-8?Q?Faktura_f=C3=B6r_=C3=A5ret.pdf?=\"");
+		// RFC 2231 parameter encoding, as Apple Mail and Thunderbird send it.
+		var rfc2231 = new MimeBodyPart();
+		rfc2231.setDataHandler(new DataHandler(new ByteArrayDataSource(bytes, "application/pdf")));
+		rfc2231.setHeader("Content-Disposition", "attachment; filename*=UTF-8''Bokf%C3%B6ring.pdf");
+
+		var multipart = new MimeMultipart();
+		for (var part : List.of(body, encodedWord, rfc2231)) {
+			multipart.addBodyPart(part);
+		}
+		var message = new MimeMessage(Session.getInstance(new Properties()));
+		message.setFrom("sender@example.com");
+		message.setRecipients(Message.RecipientType.TO, USER);
+		message.setSubject("Swedish names");
+		message.setContent(multipart);
+		message.saveChanges();
+		greenMail.setUser(USER, USER, PASSWORD).deliver(message);
+
+		long uid = uidOf("Swedish names");
+		assertEquals(List.of("Faktura för året.pdf", "Bokföring.pdf"),
+				service.readEmail(ACCOUNT, "INBOX", uid).attachments());
+		// The decoded name, as shown to the model, is what getAttachment accepts.
+		assertArrayEquals(bytes, service.getAttachment(ACCOUNT, "INBOX", uid, "Faktura för året.pdf").data());
+		assertArrayEquals(bytes, service.getAttachment(ACCOUNT, "INBOX", uid, "Bokföring.pdf").data());
+	}
+
+	@Test
 	void sendEmailOverPlainSmtpDeliversToInbox() throws Exception {
 		service.sendEmail(ACCOUNT, USER, null, null, "Sent via SMTP", "hello");
 

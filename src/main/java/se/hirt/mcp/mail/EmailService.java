@@ -36,6 +36,7 @@ import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeBodyPart;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.mail.internet.MimeMultipart;
+import jakarta.mail.internet.MimeUtility;
 import jakarta.mail.search.OrTerm;
 import jakarta.mail.search.SearchTerm;
 import jakarta.mail.search.SubjectTerm;
@@ -46,6 +47,7 @@ import org.eclipse.angus.mail.imap.IMAPFolder;
 import org.eclipse.angus.mail.imap.IMAPStore;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -626,10 +628,27 @@ public class EmailService {
 	 * so keying on {@code Content-Disposition: attachment} alone hides real attachments. The name
 	 * comes from the disposition's {@code filename} or, failing that, the content type's
 	 * {@code name}.
+	 * <p>
+	 * Non-ASCII names arrive in one of two encodings. RFC 2231 ({@code filename*=UTF-8''...}, used
+	 * by Apple Mail and Thunderbird) is decoded by Jakarta Mail itself. RFC 2047 encoded-words
+	 * inside the value ({@code =?UTF-8?Q?...?=}, used by Outlook and Gmail) are decoded here, since
+	 * Jakarta Mail only does that behind the {@code mail.mime.decodefilename} system property,
+	 * which is read in a static initializer and so cannot be relied on in a native image.
 	 */
-	private static String attachmentName(Part part) throws MessagingException {
-		var name = part.getFileName();
-		return name != null && !name.isBlank() ? name : null;
+	static String attachmentName(Part part) throws MessagingException {
+		return decodeAttachmentName(part.getFileName());
+	}
+
+	static String decodeAttachmentName(String rawName) {
+		if (rawName == null || rawName.isBlank()) {
+			return null;
+		}
+		try {
+			return MimeUtility.decodeText(rawName);
+		} catch (UnsupportedEncodingException e) {
+			// An encoded-word in a charset this JVM lacks: the raw form is still a usable identifier.
+			return rawName;
+		}
 	}
 
 	private Part findAttachment(Part part, String name) throws MessagingException, IOException {
