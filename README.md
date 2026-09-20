@@ -165,18 +165,30 @@ When `EMAIL_ALLOW_SENDING` is unset (or `false`), the four outbound tools above 
 
 ## Setting up with Claude Desktop
 
-The easiest way is the MCP Bundle. Download the `.mcpb` file for macOS or Windows from the
-[Releases page](https://github.com/thegreystone/mcp-email/releases/latest) (for example
-`mcp-email-server-1.0.12-windows-x86_64.mcpb`), then either double-click it or open it from
-*Settings → Extensions* in Claude Desktop. The extension's settings page asks for the IMAP and SMTP server,
-username and password of one account (passwords go to the operating system keychain), has two optional fields,
-*Drafts folder* and *Spam folder*, for providers where auto-detection picks the wrong folder (see
-[Special folders](#special-folders)), and has two switches, *Allow sending* and *Allow permanent deletion*, both
-off by default. No config file to edit. The account is
-called `default` in the tools. The bundle contains the same native binary as the standalone download, signed and notarized on macOS and
-Authenticode-signed on Windows, and configures a single account with the default ports; for several accounts, or other ports and SSL settings,
-use the manual route below. The bundle file itself carries no signature, so Claude Desktop shows its standard
-unsigned-extension notice before installing.
+The easiest way is the MCP Bundle. There is no config file to edit:
+
+1. Download the `.mcpb` file for your platform from the
+   [Releases page](https://github.com/thegreystone/mcp-email/releases/latest):
+   `mcp-email-server-<version>-macos-aarch64.mcpb` or `mcp-email-server-<version>-windows-x86_64.mcpb`.
+
+2. Install it: double-click the file, or in Claude Desktop open *Settings → Extensions → Advanced settings →
+   Install Extension…* and pick the file. Claude Desktop shows its standard unsigned-extension notice, because
+   the bundle file itself carries no signature (the binary inside it is signed); confirm with *Install*.
+
+3. Installing does not ask for the account details, so open the extension's settings: in
+   *Settings → Extensions*, find *Email MCP Server* and click *Configure*. Fill in the IMAP and SMTP server,
+   username and password (passwords go to the operating system keychain). For Gmail, use an
+   [App Password](https://myaccount.google.com/apppasswords). The two optional fields, *Drafts folder* and
+   *Spam folder*, are only needed for providers where auto-detection picks the wrong folder (see
+   [Special folders](#special-folders)). Leave the two switches, *Allow sending* and *Allow permanent deletion*,
+   off unless you need them. Save.
+
+4. Make sure the extension is enabled and start a new chat. The email tools appear in the tool list; the
+   account is called `default` in the tools.
+
+The bundle contains the same native binary as the standalone download, signed and notarized on macOS and
+Authenticode-signed on Windows. It configures a single account with the default ports (993 with SSL for IMAP,
+587 with STARTTLS for SMTP); for several accounts, or other ports and SSL settings, use the manual route below.
 
 If you prefer the manual route:
 
@@ -362,11 +374,11 @@ working directory. The packing is [`mcpb/pack.sh`](mcpb/pack.sh), run on the run
 
 The release also packs a **universal** bundle, `mcp-email-server-<version>-universal.mcpb`, with the macOS
 and Windows binaries and a manifest whose `platform_overrides` pick one per operating system
-([`mcpb/manifest-universal.json`](mcpb/manifest-universal.json)). Linux is left out, since Claude Desktop
-does not run there and it keeps the bundle around 35 MB; Linux users take the standalone binary. It exists
-for a Claude plugin marketplace entry, which can reference only one bundle for every platform; direct
-downloads should keep using the per-platform bundles. [`mcpb/pack-universal.sh`](mcpb/pack-universal.sh)
-runs on Linux only, since a pack done on Windows cannot set the executable bit of the macOS binary.
+([`mcpb/manifest-universal.json`](mcpb/manifest-universal.json)). It is for the cases where one file has to
+serve both platforms; direct downloads should keep using the per-platform bundles, which are smaller.
+Linux is left out, since Claude Desktop does not run there and it keeps the bundle around 35 MB; Linux users
+take the standalone binary. [`mcpb/pack-universal.sh`](mcpb/pack-universal.sh) runs on Linux only, since a
+pack done on Windows cannot set the executable bit of the macOS binary.
 
 The manual **Bundles** workflow ([`.github/workflows/bundle.yml`](.github/workflows/bundle.yml)) builds the
 bundles for an already published release from its binaries and attaches them: run it from the Actions tab

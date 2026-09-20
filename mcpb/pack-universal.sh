@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pack the universal MCP Bundle: the macOS and Windows native binaries in one .mcpb, with the manifest's
-# platform_overrides choosing the right one at launch. This is the bundle a Claude plugin marketplace entry
-# points at, since a plugin can reference only one bundle for all platforms. Linux is left out: Claude Desktop
+# platform_overrides choosing the right one at launch. This is the bundle for when one file has to serve
+# both platforms; direct downloads should use the per-platform bundles. Linux is left out: Claude Desktop
 # does not run there, and it keeps the bundle small; Linux users take the standalone binary.
 #
 #   mcpb/pack-universal.sh <version> <binaries-dir> <output.mcpb>

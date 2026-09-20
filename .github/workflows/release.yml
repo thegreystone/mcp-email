@@ -207,7 +207,7 @@ jobs:
 
       # The universal bundle carries the macOS and Windows binaries (no Linux: Claude Desktop does not run
       # there); its manifest picks one per platform at launch.
-      # It is what a plugin marketplace entry points at. Packed here, on Linux, so the executable bit of
+      # It is for when one file has to serve both platforms. Packed here, on Linux, so the executable bit of
       # the macOS binary survives (download-artifact drops it, pack-universal.sh restores it).
       - name: Package universal MCP bundle
         run: |
