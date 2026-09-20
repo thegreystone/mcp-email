@@ -42,6 +42,7 @@ import io.quarkiverse.mcp.server.ImageContent;
 import io.quarkiverse.mcp.server.TextContent;
 import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
+import io.quarkiverse.mcp.server.ToolCallException;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
@@ -73,6 +74,21 @@ public class EmailTools {
 
 	@ConfigProperty(name = "email.allow-sending", defaultValue = "false")
 	boolean allowSending;
+
+	/**
+	 * Every failure leaves a tool as a {@link ToolCallException}, which the MCP runtime turns into
+	 * a response with {@code isError: true} and the message as its text. A plain string return
+	 * would look like a successful result to the client, so it could not tell a failed move from a
+	 * done one. A ToolCallException raised inside a tool body (input validation, a disabled tool)
+	 * passes through unchanged; anything else is wrapped with the context of what was being
+	 * attempted.
+	 */
+	private static ToolCallException failure(String context, Exception e) {
+		if (e instanceof ToolCallException tce) {
+			return tce;
+		}
+		return new ToolCallException(context + ": " + e.getMessage(), e);
+	}
 
 	private String sendingDisabledMessage(String operation) {
 		return "Error: " + operation + " is disabled. Outbound email sending is opt-in for safety. "
@@ -121,7 +137,7 @@ public class EmailTools {
 		try {
 			return emailService.createFolder(account, folderName);
 		} catch (Exception e) {
-			return "Error creating folder: " + e.getMessage();
+			throw failure("Error creating folder", e);
 		}
 	}
 
@@ -135,7 +151,7 @@ public class EmailTools {
 				return "No folders found.";
 			return String.join("\n", folders);
 		} catch (Exception e) {
-			return "Error listing folders: " + e.getMessage();
+			throw failure("Error listing folders", e);
 		}
 	}
 
@@ -174,7 +190,7 @@ public class EmailTools {
 			}
 			return sb.toString();
 		} catch (Exception e) {
-			return "Error listing folder tree: " + e.getMessage();
+			throw failure("Error listing folder tree", e);
 		}
 	}
 
@@ -209,7 +225,7 @@ public class EmailTools {
 			}
 			return sb.toString();
 		} catch (Exception e) {
-			return "Error listing emails: " + e.getMessage();
+			throw failure("Error listing emails", e);
 		}
 	}
 
@@ -249,7 +265,7 @@ public class EmailTools {
 			sb.append("\n").append(body != null ? body : "(no body)");
 			return sb.toString();
 		} catch (Exception e) {
-			return "Error reading email: " + e.getMessage();
+			throw failure("Error reading email", e);
 		}
 	}
 
@@ -417,7 +433,7 @@ public class EmailTools {
 					attachment.mimeType());
 			return ToolResponse.success(new EmbeddedResource(blob));
 		} catch (Exception e) {
-			return ToolResponse.error("Error fetching attachment: " + e.getMessage());
+			throw failure("Error fetching attachment", e);
 		}
 	}
 
@@ -436,13 +452,14 @@ public class EmailTools {
 		try {
 			var folder = emailService.getSpamFolder(account);
 			if (folder == null) {
-				return "Could not auto-detect a spam folder. Call listFolderTree to find the right folder name "
-						+ "and setSpamFolder to set it for this session. The user can make it permanent with "
-						+ "EMAIL_ACCOUNTS_<NAME>_SPAM_FOLDER.";
+				throw new ToolCallException(
+						"Could not auto-detect a spam folder. Call listFolderTree to find the right folder name "
+								+ "and setSpamFolder to set it for this session. The user can make it permanent with "
+								+ "EMAIL_ACCOUNTS_<NAME>_SPAM_FOLDER.");
 			}
 			return folder;
 		} catch (Exception e) {
-			return "Error: " + e.getMessage();
+			throw failure("Error", e);
 		}
 	}
 
@@ -468,13 +485,14 @@ public class EmailTools {
 		try {
 			var folder = emailService.getDraftsFolder(account);
 			if (folder == null) {
-				return "Could not auto-detect a Drafts folder. Call listFolderTree to find the right folder name "
-						+ "and setDraftsFolder to set it for this session. The user can make it permanent with "
-						+ "EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER.";
+				throw new ToolCallException(
+						"Could not auto-detect a Drafts folder. Call listFolderTree to find the right folder name "
+								+ "and setDraftsFolder to set it for this session. The user can make it permanent with "
+								+ "EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER.");
 			}
 			return folder;
 		} catch (Exception e) {
-			return "Error: " + e.getMessage();
+			throw failure("Error", e);
 		}
 	}
 
@@ -492,15 +510,15 @@ public class EmailTools {
 	private String setSpecialFolder(
 		String account, String folderName, String kind, java.util.function.BiConsumer<String, String> setter) {
 		if (folderName == null || folderName.isBlank()) {
-			return "Error: folder name must not be empty.";
+			throw new ToolCallException("Error: folder name must not be empty.");
 		}
 		try {
 			if (!emailService.folderExists(account, folderName)) {
-				return "Error: folder '" + folderName + "' does not exist in account " + account
-						+ ". Call listFolderTree to find the right folder name.";
+				throw new ToolCallException("Error: folder '" + folderName + "' does not exist in account " + account
+						+ ". Call listFolderTree to find the right folder name.");
 			}
 		} catch (Exception e) {
-			return "Error: " + e.getMessage();
+			throw failure("Error", e);
 		}
 		setter.accept(account, folderName);
 		return kind + " folder set to: " + folderName;
@@ -520,13 +538,13 @@ public class EmailTools {
 		try {
 			var uidList = parseUids(uids);
 			if (uidList.isEmpty())
-				return "No valid UIDs provided.";
+				throw new ToolCallException("No valid UIDs provided.");
 			int moved = emailService.moveToSpam(account, sourceFolder, uidList, markRead);
 			var spamFolder = emailService.getSpamFolder(account);
 			return "Moved " + moved + " message(s) from " + sourceFolder + " to " + spamFolder
 					+ (markRead ? " (marked read)" : "");
 		} catch (Exception e) {
-			return "Error: " + e.getMessage();
+			throw failure("Error", e);
 		}
 	}
 
@@ -545,7 +563,7 @@ public class EmailTools {
 			return "Moved UID " + uid + " from " + sourceFolder + " to " + targetFolder
 					+ (markRead ? " (marked read)" : "");
 		} catch (Exception e) {
-			return "Error moving email: " + e.getMessage();
+			throw failure("Error moving email", e);
 		}
 	}
 
@@ -565,12 +583,12 @@ public class EmailTools {
 		try {
 			var uidList = parseUids(uids);
 			if (uidList.isEmpty())
-				return "No valid UIDs provided.";
+				throw new ToolCallException("No valid UIDs provided.");
 			int moved = emailService.moveEmails(account, sourceFolder, uidList, targetFolder, markRead);
 			return "Moved " + moved + " message(s) from " + sourceFolder + " to " + targetFolder
 					+ (markRead ? " (marked read)" : "");
 		} catch (Exception e) {
-			return "Error moving emails: " + e.getMessage();
+			throw failure("Error moving emails", e);
 		}
 	}
 
@@ -588,7 +606,7 @@ public class EmailTools {
 		try {
 			var targetToUids = parseBatchMoves(moves);
 			if (targetToUids.isEmpty())
-				return "No valid move instructions provided.";
+				throw new ToolCallException("No valid move instructions provided.");
 			var result = emailService.batchMoveEmails(account, sourceFolder, targetToUids, markRead);
 			var sb = new StringBuilder();
 			sb.append("Moved ").append(result.totalMoved()).append(" message(s) from ").append(sourceFolder);
@@ -600,7 +618,7 @@ public class EmailTools {
 			}
 			return sb.toString();
 		} catch (Exception e) {
-			return "Error batch moving emails: " + e.getMessage();
+			throw failure("Error batch moving emails", e);
 		}
 	}
 
@@ -615,16 +633,16 @@ public class EmailTools {
 	String folder, @ToolArg(description = "UID of the email to delete")
 	long uid) {
 		if (!allowDeletion) {
-			return "Error: deleteEmail is disabled. Permanent deletion is opt-in for safety. "
+			throw new ToolCallException("Error: deleteEmail is disabled. Permanent deletion is opt-in for safety. "
 					+ "To enable, the server administrator must set the environment variable "
 					+ "EMAIL_ALLOW_DELETION=true (or pass -Demail.allow-deletion=true) and restart the server. "
-					+ "Until then, use moveEmail to a Trash folder instead.";
+					+ "Until then, use moveEmail to a Trash folder instead.");
 		}
 		try {
 			emailService.deleteEmail(account, folder, uid);
 			return "Deleted UID " + uid + " from " + folder;
 		} catch (Exception e) {
-			return "Error deleting email: " + e.getMessage();
+			throw failure("Error deleting email", e);
 		}
 	}
 
@@ -656,7 +674,7 @@ public class EmailTools {
 			}
 			return sb.toString();
 		} catch (Exception e) {
-			return "Error searching emails: " + e.getMessage();
+			throw failure("Error searching emails", e);
 		}
 	}
 
@@ -679,14 +697,14 @@ public class EmailTools {
 	String subject, @ToolArg(description = "Email body (plain text)")
 	String body) {
 		if (!allowSending) {
-			return sendingDisabledMessage("sendEmail");
+			throw new ToolCallException(sendingDisabledMessage("sendEmail"));
 		}
 		try {
 			emailService.sendEmail(account, to, cc != null && !cc.isBlank() ? cc : null,
 					bcc != null && !bcc.isBlank() ? bcc : null, subject, body);
 			return "Email sent to " + to;
 		} catch (Exception e) {
-			return "Error sending email: " + e.getMessage();
+			throw failure("Error sending email", e);
 		}
 	}
 
@@ -741,7 +759,7 @@ public class EmailTools {
 			}
 			return sb.toString();
 		} catch (Exception e) {
-			return "Error: " + e.getMessage();
+			throw failure("Error", e);
 		}
 	}
 
@@ -789,7 +807,7 @@ public class EmailTools {
 			}
 			return sb.toString();
 		} catch (Exception e) {
-			return "Error: " + e.getMessage();
+			throw failure("Error", e);
 		}
 	}
 
@@ -802,7 +820,7 @@ public class EmailTools {
 			int count = emailService.getUnreadCount(account, folder);
 			return count + " unread email(s) in " + folder;
 		} catch (Exception e) {
-			return "Error: " + e.getMessage();
+			throw failure("Error", e);
 		}
 	}
 
@@ -856,7 +874,7 @@ public class EmailTools {
 
 			return sb.toString();
 		} catch (Exception e) {
-			return "Error: " + e.getMessage();
+			throw failure("Error", e);
 		}
 	}
 
@@ -882,13 +900,13 @@ public class EmailTools {
 		try {
 			var uidList = parseUids(uids);
 			if (uidList.isEmpty())
-				return "No valid UIDs provided.";
+				throw new ToolCallException("No valid UIDs provided.");
 			Boolean seenVal = seen != null && !seen.isBlank() ? Boolean.parseBoolean(seen) : null;
 			Boolean answeredVal = answered != null && !answered.isBlank() ? Boolean.parseBoolean(answered) : null;
 			Boolean forwardedVal = forwarded != null && !forwarded.isBlank() ? Boolean.parseBoolean(forwarded) : null;
 			Boolean flaggedVal = flagged != null && !flagged.isBlank() ? Boolean.parseBoolean(flagged) : null;
 			if (seenVal == null && answeredVal == null && forwardedVal == null && flaggedVal == null) {
-				return "No flags to change.";
+				throw new ToolCallException("No flags to change.");
 			}
 			int count = emailService.setMessageFlags(account, folder, uidList, seenVal, answeredVal, forwardedVal,
 					flaggedVal);
@@ -903,7 +921,7 @@ public class EmailTools {
 				parts.add("flagged=" + flaggedVal);
 			return "Updated " + count + " message(s) in " + folder + ": " + String.join(", ", parts);
 		} catch (Exception e) {
-			return "Error setting flags: " + e.getMessage();
+			throw failure("Error setting flags", e);
 		}
 	}
 
@@ -929,14 +947,14 @@ public class EmailTools {
 		String cc, @ToolArg(description = "BCC recipients (comma-separated, empty string if none)")
 		String bcc) {
 		if (!allowSending) {
-			return sendingDisabledMessage("replyEmail");
+			throw new ToolCallException(sendingDisabledMessage("replyEmail"));
 		}
 		try {
 			emailService.replyEmail(account, folder, uid, body, replyAll, cc != null && !cc.isBlank() ? cc : null,
 					bcc != null && !bcc.isBlank() ? bcc : null);
 			return "Reply sent" + (replyAll ? " to all" : "") + " for UID " + uid + " in " + folder;
 		} catch (Exception e) {
-			return "Error replying: " + e.getMessage();
+			throw failure("Error replying", e);
 		}
 	}
 
@@ -954,13 +972,13 @@ public class EmailTools {
 	long uid, @ToolArg(description = "Recipient email address to forward to")
 	String to) {
 		if (!allowSending) {
-			return sendingDisabledMessage("forwardEmail");
+			throw new ToolCallException(sendingDisabledMessage("forwardEmail"));
 		}
 		try {
 			emailService.forwardEmail(account, folder, uid, to, null);
 			return "Forwarded UID " + uid + " from " + folder + " to " + to;
 		} catch (Exception e) {
-			return "Error forwarding: " + e.getMessage();
+			throw failure("Error forwarding", e);
 		}
 	}
 
@@ -980,13 +998,13 @@ public class EmailTools {
 	String to, @ToolArg(description = "Comment to prepend before the forwarded message (plain text)")
 	String comment) {
 		if (!allowSending) {
-			return sendingDisabledMessage("forwardEmailWithComment");
+			throw new ToolCallException(sendingDisabledMessage("forwardEmailWithComment"));
 		}
 		try {
 			emailService.forwardEmail(account, folder, uid, to, comment);
 			return "Forwarded UID " + uid + " from " + folder + " to " + to + " (with comment)";
 		} catch (Exception e) {
-			return "Error forwarding: " + e.getMessage();
+			throw failure("Error forwarding", e);
 		}
 	}
 
@@ -1013,7 +1031,7 @@ public class EmailTools {
 					inReplyToFolder != null && !inReplyToFolder.isEmpty() ? inReplyToFolder : null, inReplyToUid);
 			return "Draft saved to Drafts folder for account " + account;
 		} catch (Exception e) {
-			return "Error saving draft: " + e.getMessage();
+			throw failure("Error saving draft", e);
 		}
 	}
 
@@ -1046,7 +1064,7 @@ public class EmailTools {
 
 			String extracted = PdfTextExtractorUtil.extractText(baos.toByteArray());
 			if (!extracted.contains("Hello from mcp-email-server")) {
-				return "PDF self-test FAILED. Unexpected content:\n" + extracted;
+				throw new ToolCallException("PDF self-test FAILED. Unexpected content:\n" + extracted);
 			}
 
 			// Second document carries an XMP metadata packet, as most real-world PDFs do. The native
@@ -1063,11 +1081,12 @@ public class EmailTools {
 			}
 			String extractedXmp = PdfTextExtractorUtil.extractText(xmpBaos.toByteArray());
 			if (!extractedXmp.contains("XMP-tagged document")) {
-				return "PDF self-test FAILED for a document with XMP metadata. Unexpected content:\n" + extractedXmp;
+				throw new ToolCallException(
+						"PDF self-test FAILED for a document with XMP metadata. Unexpected content:\n" + extractedXmp);
 			}
 			return "PDF self-test PASSED. Extracted text:\n" + extracted + "\n" + extractedXmp;
 		} catch (Exception e) {
-			return "PDF self-test FAILED: " + e.getClass().getName() + ": " + e.getMessage();
+			throw failure("PDF self-test FAILED: " + e.getClass().getName(), e);
 		}
 	}
 

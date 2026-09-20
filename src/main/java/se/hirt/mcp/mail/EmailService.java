@@ -191,7 +191,7 @@ public class EmailService {
 		var store = getImapStore(account);
 		var folder = store.getFolder(folderName);
 		if (folder.exists()) {
-			return "Folder already exists: " + folderName;
+			throw new MessagingException("Folder already exists: " + folderName);
 		}
 		if (folder.create(Folder.HOLDS_MESSAGES)) {
 			return "Created folder: " + folderName;
