@@ -35,6 +35,7 @@ import com.icegreen.greenmail.util.ServerSetupTest;
 import jakarta.mail.Flags;
 import jakarta.mail.Folder;
 import jakarta.mail.Message;
+import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
 import jakarta.mail.search.FlagTerm;
@@ -43,6 +44,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
+import java.net.ServerSocket;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -137,16 +139,37 @@ class EmailServiceImapTest {
 		}
 	}
 
+	@Test
+	void networkTimeoutFiresWhenServerStaysSilent() throws Exception {
+		// A listening socket that is never accepted: the TCP handshake completes, the IMAP greeting never
+		// comes. Without a timeout the connect would wait forever.
+		try (var silentServer = new ServerSocket(0)) {
+			var silentService = new EmailService();
+			silentService.config = config("localhost", silentServer.getLocalPort(), 1);
+
+			long start = System.nanoTime();
+			var e = assertThrows(MessagingException.class, () -> silentService.listFolders(ACCOUNT));
+			long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+
+			assertTrue(elapsedMillis < 10_000,
+					"expected to give up after about 1 s, took " + elapsedMillis + " ms: " + e.getMessage());
+		}
+	}
+
 	// ── helpers ─────────────────────────────────────────────────────────
 
 	private static EmailConfig config() {
+		return config("localhost", ServerSetupTest.IMAP.getPort(), 60);
+	}
+
+	private static EmailConfig config(String imapHost, int imapPort, int networkTimeoutSeconds) {
 		var imap = new EmailConfig.ImapConfig() {
 			public String host() {
-				return "localhost";
+				return imapHost;
 			}
 
 			public int port() {
-				return ServerSetupTest.IMAP.getPort();
+				return imapPort;
 			}
 
 			public String username() {
@@ -199,7 +222,15 @@ class EmailServiceImapTest {
 				return Optional.empty();
 			}
 		};
-		return () -> Map.of(ACCOUNT, account);
+		return new EmailConfig() {
+			public Map<String, AccountConfig> accounts() {
+				return Map.of(ACCOUNT, account);
+			}
+
+			public int networkTimeout() {
+				return networkTimeoutSeconds;
+			}
+		};
 	}
 
 	/** A second, independent IMAP session standing in for the user's regular mail client. */

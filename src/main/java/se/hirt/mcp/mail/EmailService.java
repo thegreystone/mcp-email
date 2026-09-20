@@ -100,6 +100,22 @@ public class EmailService {
 		}
 	}
 
+	/**
+	 * Applies {@link EmailConfig#networkTimeout()} to the connect, read and write timeouts of a
+	 * Jakarta Mail protocol ({@code imap}, {@code imaps} or {@code smtp}). Jakarta Mail takes
+	 * milliseconds and defaults to no timeout at all.
+	 */
+	private void applyNetworkTimeout(Properties props, String protocol) {
+		int seconds = config.networkTimeout();
+		if (seconds <= 0) {
+			return;
+		}
+		var millis = String.valueOf(seconds * 1000L);
+		props.put("mail." + protocol + ".connectiontimeout", millis);
+		props.put("mail." + protocol + ".timeout", millis);
+		props.put("mail." + protocol + ".writetimeout", millis);
+	}
+
 	private Store connectImapStore(String accountName) throws MessagingException {
 		var ac = getAccountConfig(accountName);
 		var imapCfg = ac.imap();
@@ -112,6 +128,7 @@ public class EmailService {
 		if (imapCfg.ssl()) {
 			props.put("mail." + protocol + ".ssl.enable", "true");
 		}
+		applyNetworkTimeout(props, protocol);
 
 		var session = Session.getInstance(props);
 		var store = session.getStore(protocol);
@@ -854,6 +871,7 @@ public class EmailService {
 		if (smtpCfg.starttls()) {
 			props.put("mail.smtp.starttls.enable", "true");
 		}
+		applyNetworkTimeout(props, "smtp");
 
 		var session = Session.getInstance(props, new Authenticator() {
 			@Override

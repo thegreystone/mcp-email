@@ -39,6 +39,17 @@ public interface EmailConfig {
 
 	Map<String, AccountConfig> accounts();
 
+	/**
+	 * Timeout in seconds for every IMAP and SMTP connection of every account: connecting, waiting
+	 * for the server to answer, and writing to it. Without one, a stalled server hangs the tool
+	 * call, and with the STDIO transport the whole conversation, for good. The read timeout is per
+	 * socket read, not per operation, so a large download over a slow link is not cut off as long
+	 * as bytes keep arriving; only a server that goes silent trips it. {@code 0} disables the
+	 * timeouts. {@code EMAIL_NETWORK_TIMEOUT} in the environment.
+	 */
+	@WithDefault("60")
+	int networkTimeout();
+
 	interface AccountConfig {
 		ImapConfig imap();
 

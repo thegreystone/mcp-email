@@ -144,6 +144,19 @@ picks the wrong folder.
 
 You can define as many accounts as needed. For example, to add a `work` and `gmail` account, set environment variables for both `EMAIL_ACCOUNTS_WORK_*` and `EMAIL_ACCOUNTS_GMAIL_*`.
 
+### Network timeout
+
+One setting covers every connection of every account:
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `EMAIL_NETWORK_TIMEOUT` | `60` | Seconds to wait when connecting to an IMAP or SMTP server, for the server to answer, and for a write to complete. |
+
+Without it a server that stops answering would hang the tool call, and with it the conversation, for good.
+The wait is per socket read, not per operation, so a large attachment over a slow link is fine as long as
+data keeps arriving. Raise it if a slow server times out on big searches; `0` disables the timeouts.
+Equivalent system property: `-Demail.network-timeout=60`.
+
 ### Safety flags — opt-in for irreversible actions
 
 Permanent and outbound operations are **opt-in** for safety. By default the destructive/outbound tools are disabled and return an explanatory error so the LLM can tell the user what's happening and fall back to a safer alternative (`moveEmail` to a Trash folder, or `saveDraft` for the user to send manually).
