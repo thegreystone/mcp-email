@@ -30,3 +30,6 @@ Thumbs.db
 
 # Log files
 mcp-email-server.log*
+
+# Local Jakarta Mail checkout
+jakarta/
