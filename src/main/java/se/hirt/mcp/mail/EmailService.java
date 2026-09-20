@@ -572,8 +572,21 @@ public class EmailService {
 
 	// ── Read a single email ──────────────────────────────────────────────
 
-	public record EmailContent(String subject, String from, String to, String date, boolean seen, boolean answered,
-			boolean forwarded, String body, boolean html, List<String> attachments, int size) {
+	/**
+	 * @param to
+	 *            the To recipients, or null when the message has none (Bcc delivery, undisclosed
+	 *            recipients)
+	 * @param cc
+	 *            the Cc recipients, or null when there are none
+	 */
+	public record EmailContent(String subject, String from, String to, String cc, String date, boolean seen,
+			boolean answered, boolean forwarded, String body, boolean html, List<String> attachments, int size) {
+	}
+
+	/** The recipients of one type as a display string, or null when there are none. */
+	private static String recipients(Message message, Message.RecipientType type) throws MessagingException {
+		var addresses = message.getRecipients(type);
+		return addresses != null && addresses.length > 0 ? InternetAddress.toString(addresses) : null;
 	}
 
 	public EmailContent readEmail(String account, String folderName, long uid) throws MessagingException, IOException {
@@ -588,7 +601,8 @@ public class EmailService {
 
 			var from = message.getFrom() != null && message.getFrom().length > 0 ? message.getFrom()[0].toString()
 					: "(unknown)";
-			var to = InternetAddress.toString(message.getRecipients(Message.RecipientType.TO));
+			var to = recipients(message, Message.RecipientType.TO);
+			var cc = recipients(message, Message.RecipientType.CC);
 			var date = message.getSentDate() != null ? message.getSentDate().toString() : "(no date)";
 			boolean seen = message.isSet(Flags.Flag.SEEN);
 
@@ -599,7 +613,7 @@ public class EmailService {
 
 			boolean answered = message.isSet(Flags.Flag.ANSWERED);
 			boolean forwarded = isForwarded(message);
-			return new EmailContent(message.getSubject(), from, to, date, seen, answered, forwarded, body, isHtml,
+			return new EmailContent(message.getSubject(), from, to, cc, date, seen, answered, forwarded, body, isHtml,
 					attachments, message.getSize());
 		} finally {
 			folder.close(false);

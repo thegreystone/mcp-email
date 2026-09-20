@@ -315,6 +315,38 @@ class EmailServiceImapTest {
 	}
 
 	@Test
+	void readEmailShowsRecipientsHonestly() throws Exception {
+		// Bcc delivery: no To header at all.
+		var bccOnly = new MimeMessage(Session.getInstance(new Properties()));
+		bccOnly.setFrom("news@example.com");
+		bccOnly.setSubject("Newsletter via Bcc");
+		bccOnly.setText("hi");
+		bccOnly.saveChanges();
+		greenMail.setUser(USER, USER, PASSWORD).deliver(bccOnly);
+		// Copied in: a To and a Cc.
+		var copied = new MimeMessage(Session.getInstance(new Properties()));
+		copied.setFrom("boss@example.com");
+		copied.setRecipients(Message.RecipientType.TO, "colleague@example.com");
+		copied.setRecipients(Message.RecipientType.CC, USER + ", other@example.com");
+		copied.setSubject("FYI");
+		copied.setText("see below");
+		copied.saveChanges();
+		greenMail.setUser(USER, USER, PASSWORD).deliver(copied);
+
+		var tools = new EmailTools();
+		tools.emailService = service;
+
+		var newsletter = tools.readEmail(ACCOUNT, "INBOX", uidOf("Newsletter via Bcc"), Optional.empty());
+		assertTrue(newsletter.contains("To:      (none)"), newsletter);
+		assertFalse(newsletter.contains("null"), newsletter);
+		assertFalse(newsletter.contains("Cc:"), "no Cc line when there are no Cc recipients:\n" + newsletter);
+
+		var fyi = tools.readEmail(ACCOUNT, "INBOX", uidOf("FYI"), Optional.empty());
+		assertTrue(fyi.contains("To:      colleague@example.com"), fyi);
+		assertTrue(fyi.contains("Cc:      " + USER + ", other@example.com"), fyi);
+	}
+
+	@Test
 	void sendEmailOverPlainSmtpDeliversToInbox() throws Exception {
 		service.sendEmail(ACCOUNT, USER, null, null, "Sent via SMTP", "hello");
 

@@ -248,7 +248,10 @@ public class EmailTools {
 			sb.append(UNTRUSTED_CONTENT_WARNING);
 			sb.append("Subject: ").append(email.subject()).append("\n");
 			sb.append("From:    ").append(email.from()).append("\n");
-			sb.append("To:      ").append(email.to()).append("\n");
+			sb.append("To:      ").append(email.to() != null ? email.to() : "(none)").append("\n");
+			if (email.cc() != null) {
+				sb.append("Cc:      ").append(email.cc()).append("\n");
+			}
 			sb.append("Date:    ").append(email.date()).append("\n");
 			sb.append("Size:    ").append(formatSize(email.size())).append("\n");
 			sb.append("Read:    ").append(email.seen() ? "yes" : "no").append("\n");
