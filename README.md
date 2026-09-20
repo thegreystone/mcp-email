@@ -111,17 +111,36 @@ Accounts are defined by convention: `EMAIL_ACCOUNTS_<NAME>_IMAP_*` and `EMAIL_AC
 | `EMAIL_ACCOUNTS_<NAME>_IMAP_HOST` | yes | | `imap.gmail.com` |
 | `EMAIL_ACCOUNTS_<NAME>_IMAP_USERNAME` | yes | | `you@gmail.com` |
 | `EMAIL_ACCOUNTS_<NAME>_IMAP_PASSWORD` | yes | | `abcd efgh ijkl mnop` |
-| `EMAIL_ACCOUNTS_<NAME>_IMAP_PORT` | no | `993` | |
-| `EMAIL_ACCOUNTS_<NAME>_IMAP_SSL` | no | `true` | |
+| `EMAIL_ACCOUNTS_<NAME>_IMAP_PORT` | no | `993` | `143` |
+| `EMAIL_ACCOUNTS_<NAME>_IMAP_SSL` | no | `true`, or `false` on port 143 | |
 | `EMAIL_ACCOUNTS_<NAME>_SMTP_HOST` | yes | | `smtp.gmail.com` |
 | `EMAIL_ACCOUNTS_<NAME>_SMTP_USERNAME` | yes | | `you@gmail.com` |
 | `EMAIL_ACCOUNTS_<NAME>_SMTP_PASSWORD` | yes | | `abcd efgh ijkl mnop` |
-| `EMAIL_ACCOUNTS_<NAME>_SMTP_PORT` | no | `587` | |
+| `EMAIL_ACCOUNTS_<NAME>_SMTP_PORT` | no | `587` | `465` |
 | `EMAIL_ACCOUNTS_<NAME>_SMTP_STARTTLS` | no | `true` | |
+| `EMAIL_ACCOUNTS_<NAME>_SMTP_SSL` | no | `false`, or `true` on port 465 | |
 | `EMAIL_ACCOUNTS_<NAME>_DRAFTS_FOLDER` | no | auto-detected | `INBOX.INBOX.Drafts` |
 | `EMAIL_ACCOUNTS_<NAME>_SPAM_FOLDER` | no | auto-detected | `INBOX.INBOX.Junk` |
 
 For Gmail, create an [App Password](https://myaccount.google.com/apppasswords).
+
+You can define as many accounts as needed. For example, to add a `work` and `gmail` account, set environment
+variables for both `EMAIL_ACCOUNTS_WORK_*` and `EMAIL_ACCOUNTS_GMAIL_*`.
+
+### Transport security
+
+With the default ports, IMAP is TLS on 993 and SMTP is port 587 upgraded with STARTTLS; the STARTTLS upgrade
+is required, so a server that does not offer it is refused rather than sent the password in the clear. The
+two other common setups need only the port, since the TLS mode follows it:
+
+- **SMTP on port 465 (implicit TLS, "SMTPS")**, which some providers offer instead of 587: set
+  `EMAIL_ACCOUNTS_<NAME>_SMTP_PORT=465`. The connection is then encrypted from the first byte and the
+  STARTTLS setting is ignored.
+- **Plain IMAP on port 143**: set `EMAIL_ACCOUNTS_<NAME>_IMAP_PORT=143`. The connection is upgraded with
+  STARTTLS when the server offers it, and stays unencrypted otherwise (for a local or test server).
+
+For a non-standard port, set `IMAP_SSL` or `SMTP_SSL` explicitly; an explicit value always wins over the
+port rule. Set `SMTP_STARTTLS=false` only for a server that really has no TLS at all.
 
 ### Special folders
 
@@ -141,8 +160,6 @@ configuration; the folder is resolved on first use, in this order:
 
 Set the variable explicitly if your provider uses a name none of the heuristics find, or if auto-detection
 picks the wrong folder.
-
-You can define as many accounts as needed. For example, to add a `work` and `gmail` account, set environment variables for both `EMAIL_ACCOUNTS_WORK_*` and `EMAIL_ACCOUNTS_GMAIL_*`.
 
 ### Network timeout
 

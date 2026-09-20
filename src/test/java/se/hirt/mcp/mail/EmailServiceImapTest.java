@@ -53,8 +53,8 @@ import java.util.Properties;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Runs {@link EmailService} against an in-memory GreenMail IMAP server. The move and delete tests
- * reproduce the situation where another mail client has flagged a message \Deleted without
+ * Runs {@link EmailService} against in-memory GreenMail IMAP and SMTP servers. The move and delete
+ * tests reproduce the situation where another mail client has flagged a message \Deleted without
  * expunging it: the service must never purge that message as a side effect of its own work.
  */
 class EmailServiceImapTest {
@@ -64,7 +64,7 @@ class EmailServiceImapTest {
 	private static final String ACCOUNT = "test";
 
 	@RegisterExtension
-	static GreenMailExtension greenMail = new GreenMailExtension(ServerSetupTest.IMAP)
+	static GreenMailExtension greenMail = new GreenMailExtension(ServerSetupTest.SMTP_IMAP)
 			.withConfiguration(GreenMailConfiguration.aConfig().withUser(USER, USER, PASSWORD));
 
 	private EmailService service;
@@ -145,7 +145,7 @@ class EmailServiceImapTest {
 		// comes. Without a timeout the connect would wait forever.
 		try (var silentServer = new ServerSocket(0)) {
 			var silentService = new EmailService();
-			silentService.config = config("localhost", silentServer.getLocalPort(), 1);
+			silentService.config = config(silentServer.getLocalPort(), ServerSetupTest.SMTP.getPort(), false, false, 1);
 
 			long start = System.nanoTime();
 			var e = assertThrows(MessagingException.class, () -> silentService.listFolders(ACCOUNT));
@@ -156,16 +156,39 @@ class EmailServiceImapTest {
 		}
 	}
 
+	@Test
+	void sendEmailOverPlainSmtpDeliversToInbox() throws Exception {
+		service.sendEmail(ACCOUNT, USER, null, null, "Sent via SMTP", "hello");
+
+		assertTrue(greenMail.waitForIncomingEmail(5_000, 1), "GreenMail should have received the message");
+		assertTrue(subjectsIn("INBOX").contains("Sent via SMTP"));
+	}
+
+	@Test
+	void starttlsIsRequiredNotOpportunistic() throws Exception {
+		// GreenMail's plain SMTP server does not offer STARTTLS. With starttls=true the send must be refused
+		// instead of silently falling back to an unencrypted login.
+		var strictService = new EmailService();
+		strictService.config = config(ServerSetupTest.IMAP.getPort(), ServerSetupTest.SMTP.getPort(), true, false, 60);
+
+		var e = assertThrows(MessagingException.class,
+				() -> strictService.sendEmail(ACCOUNT, USER, null, null, "Must not be sent", "hello"));
+
+		assertTrue(e.getMessage().toLowerCase().contains("starttls"), "unexpected failure reason: " + e.getMessage());
+		assertFalse(subjectsIn("INBOX").contains("Must not be sent"));
+	}
+
 	// ── helpers ─────────────────────────────────────────────────────────
 
 	private static EmailConfig config() {
-		return config("localhost", ServerSetupTest.IMAP.getPort(), 60);
+		return config(ServerSetupTest.IMAP.getPort(), ServerSetupTest.SMTP.getPort(), false, false, 60);
 	}
 
-	private static EmailConfig config(String imapHost, int imapPort, int networkTimeoutSeconds) {
+	private static EmailConfig config(
+		int imapPort, int smtpPort, boolean smtpStarttls, boolean smtpSsl, int networkTimeoutSeconds) {
 		var imap = new EmailConfig.ImapConfig() {
 			public String host() {
-				return imapHost;
+				return "localhost";
 			}
 
 			public int port() {
@@ -180,8 +203,8 @@ class EmailServiceImapTest {
 				return PASSWORD;
 			}
 
-			public boolean ssl() {
-				return false;
+			public Optional<Boolean> ssl() {
+				return Optional.of(false);
 			}
 		};
 		var smtp = new EmailConfig.SmtpConfig() {
@@ -190,7 +213,7 @@ class EmailServiceImapTest {
 			}
 
 			public int port() {
-				return 25;
+				return smtpPort;
 			}
 
 			public String username() {
@@ -202,7 +225,11 @@ class EmailServiceImapTest {
 			}
 
 			public boolean starttls() {
-				return false;
+				return smtpStarttls;
+			}
+
+			public Optional<Boolean> ssl() {
+				return Optional.of(smtpSsl);
 			}
 		};
 		var account = new EmailConfig.AccountConfig() {

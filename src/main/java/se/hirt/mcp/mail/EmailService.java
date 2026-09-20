@@ -116,17 +116,39 @@ public class EmailService {
 		props.put("mail." + protocol + ".writetimeout", millis);
 	}
 
+	/**
+	 * Whether IMAP uses TLS from the first byte. An explicit setting wins; otherwise it follows the
+	 * port, so that port 143 (plain IMAP) works without also having to set the flag, as it would in
+	 * a mail client.
+	 */
+	static boolean imapSsl(EmailConfig.ImapConfig cfg) {
+		return cfg.ssl().orElse(cfg.port() != 143);
+	}
+
+	/**
+	 * Whether SMTP uses implicit TLS ("SMTPS"). Explicit setting wins; otherwise on for port 465
+	 * only.
+	 */
+	static boolean smtpSsl(EmailConfig.SmtpConfig cfg) {
+		return cfg.ssl().orElse(cfg.port() == 465);
+	}
+
 	private Store connectImapStore(String accountName) throws MessagingException {
 		var ac = getAccountConfig(accountName);
 		var imapCfg = ac.imap();
 
 		var props = new Properties();
-		var protocol = imapCfg.ssl() ? "imaps" : "imap";
+		boolean ssl = imapSsl(imapCfg);
+		var protocol = ssl ? "imaps" : "imap";
 		props.put("mail.store.protocol", protocol);
 		props.put("mail." + protocol + ".host", imapCfg.host());
 		props.put("mail." + protocol + ".port", String.valueOf(imapCfg.port()));
-		if (imapCfg.ssl()) {
+		if (ssl) {
 			props.put("mail." + protocol + ".ssl.enable", "true");
+		} else {
+			// Plain IMAP (port 143): upgrade with STARTTLS when the server offers it. Not required, since
+			// ssl=false is also how one talks to a local or test server that has no TLS at all.
+			props.put("mail." + protocol + ".starttls.enable", "true");
 		}
 		applyNetworkTimeout(props, protocol);
 
@@ -868,8 +890,15 @@ public class EmailService {
 		props.put("mail.smtp.host", smtpCfg.host());
 		props.put("mail.smtp.port", String.valueOf(smtpCfg.port()));
 		props.put("mail.smtp.auth", "true");
-		if (smtpCfg.starttls()) {
+		if (smtpSsl(smtpCfg)) {
+			// Implicit TLS (port 465): encrypted from the first byte, nothing to upgrade.
+			props.put("mail.smtp.ssl.enable", "true");
+		} else if (smtpCfg.starttls()) {
+			// Plain connection upgraded with STARTTLS (port 587). Required, not opportunistic: without
+			// "required" Jakarta Mail would quietly fall back to sending the password in the clear if
+			// the server did not advertise STARTTLS.
 			props.put("mail.smtp.starttls.enable", "true");
+			props.put("mail.smtp.starttls.required", "true");
 		}
 		applyNetworkTimeout(props, "smtp");
 

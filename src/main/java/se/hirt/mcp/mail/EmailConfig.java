@@ -80,8 +80,11 @@ public interface EmailConfig {
 
 		String password();
 
-		@WithDefault("true")
-		boolean ssl();
+		/**
+		 * Connect with TLS from the first byte (port 993). Unset means: on unless the port is 143,
+		 * the plain IMAP port. See {@link EmailService#imapSsl}.
+		 */
+		Optional<Boolean> ssl();
 	}
 
 	interface SmtpConfig {
@@ -94,7 +97,20 @@ public interface EmailConfig {
 
 		String password();
 
+		/**
+		 * Upgrade the connection with STARTTLS. When enabled the upgrade is required: a server that
+		 * does not offer it is refused rather than talked to in the clear. This is the usual setup
+		 * on port 587. Ignored when {@link #ssl()} is on, since that connection is encrypted from
+		 * the start.
+		 */
 		@WithDefault("true")
 		boolean starttls();
+
+		/**
+		 * Connect with TLS from the first byte (implicit TLS, "SMTPS"), the usual setup on port
+		 * 465. Unset means: on if the port is 465, otherwise off, which keeps the port 587 +
+		 * STARTTLS behaviour for existing configurations. See {@link EmailService#smtpSsl}.
+		 */
+		Optional<Boolean> ssl();
 	}
 }
