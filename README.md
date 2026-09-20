@@ -401,6 +401,15 @@ mvn package -Dnative -DskipTests
 
 The native binary will be at `target/mcp-email-server-<version>-runner` (or `.exe` on Windows).
 
+Two integration tests run against the built binary rather than the classes: a sanity test of the MCP
+handshake and PDF extraction, and a mailbox scenario that drives the binary over STDIO against an in-process
+IMAP and SMTP server (GreenMail), reading, moving, drafting and sending. They are skipped unless the binary is
+named, and the release workflow runs them on every platform's binary:
+
+```bash
+mvn test-compile failsafe:integration-test failsafe:verify -Dnative.image.path=target/mcp-email-server-<version>-runner
+```
+
 ### MCP Bundles
 
 Pushing a `v<version>` tag runs the release workflow, which builds the uber-jar and the four native images and
