@@ -569,7 +569,7 @@ public class EmailTools {
 
 	@Tool(description = "Batch move emails from one source folder to multiple target folders in a single IMAP session. "
 			+ "Much more efficient than calling moveEmails repeatedly — opens the source folder once and performs "
-			+ "all moves before expunging. Format: 'targetFolder:uid1,uid2;otherFolder:uid3,uid4'. "
+			+ "all moves in that session. Format: 'targetFolder:uid1,uid2;otherFolder:uid3,uid4'. "
 			+ "Example: 'lists.quora:101,102;Spam:201,202,203;Archive:301'. "
 			+ "Use markRead=true to mark all moved emails as read atomically. "
 			+ "Call listAccounts first to discover available accounts.")

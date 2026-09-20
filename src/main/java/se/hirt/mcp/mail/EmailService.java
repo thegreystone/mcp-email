@@ -43,6 +43,7 @@ import jakarta.mail.search.FromStringTerm;
 import jakarta.mail.search.BodyTerm;
 import jakarta.mail.search.FlagTerm;
 import org.eclipse.angus.mail.imap.IMAPFolder;
+import org.eclipse.angus.mail.imap.IMAPStore;
 
 import java.io.IOException;
 import java.util.*;
@@ -613,6 +614,73 @@ public class EmailService {
 		return names;
 	}
 
+	// ── Removing messages from a folder without collateral damage ────────
+
+	/**
+	 * A plain IMAP EXPUNGE removes <em>every</em> message in the folder that carries the \Deleted
+	 * flag, not only the ones this server flagged. Mail clients such as Thunderbird and Outlook can
+	 * leave messages flagged \Deleted but not yet purged, and a naive move would silently destroy
+	 * them. So messages are removed in this order of preference:
+	 * <ol>
+	 * <li>the MOVE extension (RFC 6851): one command, nothing is flagged and nothing is
+	 * expunged,</li>
+	 * <li>COPY, flag \Deleted, then UID EXPUNGE (RFC 4315, UIDPLUS) of exactly those UIDs,</li>
+	 * <li>COPY, flag \Deleted and a plain EXPUNGE, but only after {@link #checkExpungeIsSafe} has
+	 * verified that nothing else in the folder is flagged \Deleted.</li>
+	 * </ol>
+	 */
+	private static boolean hasCapability(Store store, String capability) throws MessagingException {
+		return store instanceof IMAPStore imapStore && imapStore.hasCapability(capability);
+	}
+
+	/**
+	 * Call before touching anything when the fallback to a plain EXPUNGE may be needed. Throws if
+	 * that fallback would remove messages that another client flagged \Deleted.
+	 *
+	 * @param moving
+	 *            true when the messages are moved to another folder (MOVE avoids the expunge
+	 *            altogether), false when they are only removed
+	 */
+	private static void checkExpungeIsSafe(Store store, Folder openSource, boolean moving) throws MessagingException {
+		if (hasCapability(store, "UIDPLUS") || (moving && hasCapability(store, "MOVE"))) {
+			return;
+		}
+		var alreadyDeleted = openSource.search(new FlagTerm(new Flags(Flags.Flag.DELETED), true));
+		if (alreadyDeleted.length > 0) {
+			throw new MessagingException("Refusing to " + (moving ? "move" : "delete") + " messages in "
+					+ openSource.getFullName() + ": the server supports neither MOVE nor UIDPLUS, so the removal "
+					+ "would need a plain EXPUNGE, and " + alreadyDeleted.length
+					+ " other message(s) in the folder are flagged \\Deleted by another mail client and would be "
+					+ "purged as well. Purge or undelete them in that client first, then retry.");
+		}
+	}
+
+	/**
+	 * Moves the messages out of the open source folder; see {@link #hasCapability} for the
+	 * strategy.
+	 */
+	private static void moveMessages(Store store, Folder openSource, Message[] messages, Folder target)
+			throws MessagingException {
+		if (hasCapability(store, "MOVE") && openSource instanceof IMAPFolder imapFolder) {
+			imapFolder.moveMessages(messages, target);
+			return;
+		}
+		openSource.copyMessages(messages, target);
+		removeMessages(store, openSource, messages);
+	}
+
+	/** Flags the messages \Deleted and expunges them, and only them where the server allows it. */
+	private static void removeMessages(Store store, Folder openSource, Message[] messages) throws MessagingException {
+		for (var m : messages) {
+			m.setFlag(Flags.Flag.DELETED, true);
+		}
+		if (hasCapability(store, "UIDPLUS") && openSource instanceof IMAPFolder imapFolder) {
+			imapFolder.expunge(messages);
+		} else {
+			openSource.expunge();
+		}
+	}
+
 	// ── Move emails ─────────────────────────────────────────────────────
 
 	public void moveEmail(String account, String sourceFolderName, long uid, String targetFolderName, boolean markRead)
@@ -638,6 +706,7 @@ public class EmailService {
 			}
 			if (messages.isEmpty())
 				return 0;
+			checkExpungeIsSafe(store, sourceFolder, true);
 
 			var msgArray = messages.toArray(new Message[0]);
 			if (markRead) {
@@ -645,11 +714,7 @@ public class EmailService {
 					m.setFlag(Flags.Flag.SEEN, true);
 				}
 			}
-			sourceFolder.copyMessages(msgArray, targetFolder);
-			for (var m : msgArray) {
-				m.setFlag(Flags.Flag.DELETED, true);
-			}
-			sourceFolder.expunge();
+			moveMessages(store, sourceFolder, msgArray, targetFolder);
 			return msgArray.length;
 		} finally {
 			sourceFolder.close(false);
@@ -669,6 +734,7 @@ public class EmailService {
 			var uf = (UIDFolder) sourceFolder;
 			int totalMoved = 0;
 			var perFolder = new LinkedHashMap<String, Integer>();
+			checkExpungeIsSafe(store, sourceFolder, true);
 
 			for (var entry : targetToUids.entrySet()) {
 				var targetFolder = store.getFolder(entry.getKey());
@@ -687,15 +753,11 @@ public class EmailService {
 						m.setFlag(Flags.Flag.SEEN, true);
 					}
 				}
-				sourceFolder.copyMessages(msgArray, targetFolder);
-				for (var m : msgArray) {
-					m.setFlag(Flags.Flag.DELETED, true);
-				}
+				moveMessages(store, sourceFolder, msgArray, targetFolder);
 				totalMoved += msgArray.length;
 				perFolder.put(entry.getKey(), msgArray.length);
 			}
 
-			sourceFolder.expunge();
 			return new BatchMoveResult(totalMoved, perFolder);
 		} finally {
 			sourceFolder.close(false);
@@ -708,10 +770,16 @@ public class EmailService {
 		var store = getImapStore(account);
 		Folder trashFolder = null;
 		for (var name : List.of("[Gmail]/Trash", "Trash", "Deleted Items", "Deleted")) {
-			trashFolder = store.getFolder(name);
-			if (trashFolder.exists())
-				break;
-			trashFolder = null;
+			var candidate = store.getFolder(name);
+			try {
+				if (candidate.exists()) {
+					trashFolder = candidate;
+					break;
+				}
+			} catch (MessagingException e) {
+				// Some servers reject a LIST for a name they consider malformed (e.g. the brackets in
+				// [Gmail]/Trash). That only means this candidate is not their trash folder.
+			}
 		}
 
 		var sourceFolder = store.getFolder(folderName);
@@ -722,11 +790,14 @@ public class EmailService {
 			if (message == null)
 				throw new MessagingException("No message with UID " + uid);
 
+			var messages = new Message[] {message};
 			if (trashFolder != null) {
-				sourceFolder.copyMessages(new Message[] {message}, trashFolder);
+				checkExpungeIsSafe(store, sourceFolder, true);
+				moveMessages(store, sourceFolder, messages, trashFolder);
+			} else {
+				checkExpungeIsSafe(store, sourceFolder, false);
+				removeMessages(store, sourceFolder, messages);
 			}
-			message.setFlag(Flags.Flag.DELETED, true);
-			sourceFolder.expunge();
 		} finally {
 			sourceFolder.close(false);
 		}
