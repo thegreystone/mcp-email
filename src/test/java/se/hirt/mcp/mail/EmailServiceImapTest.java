@@ -347,6 +347,45 @@ class EmailServiceImapTest {
 	}
 
 	@Test
+	void nonAsciiNamesAndSubjectsAreShownDecodedEverywhere() throws Exception {
+		var message = new MimeMessage(Session.getInstance(new Properties()));
+		message.setFrom(new jakarta.mail.internet.InternetAddress("faktura@example.com", "Bokföring AB", "UTF-8"));
+		message.setRecipient(Message.RecipientType.TO,
+				new jakarta.mail.internet.InternetAddress(USER, "Åsa Användare", "UTF-8"));
+		message.setRecipient(Message.RecipientType.CC,
+				new jakarta.mail.internet.InternetAddress("kollega@example.com", "Örjan Kollega", "UTF-8"));
+		message.setSubject("Årsredovisning 2026", "UTF-8");
+		message.setText("hej");
+		message.saveChanges();
+		// The wire form is encoded; that is what the IMAP server hands back.
+		assertTrue(message.getHeader("From")[0].contains("=?UTF-8?"), message.getHeader("From")[0]);
+		greenMail.setUser(USER, USER, PASSWORD).deliver(message);
+		var tools = new EmailTools();
+		tools.emailService = service;
+
+		var listed = tools.listEmails(ACCOUNT, "INBOX", 0, 10, Optional.empty());
+		assertTrue(listed.contains("Årsredovisning 2026"), listed);
+		assertTrue(listed.contains("From: Bokföring AB <faktura@example.com>"), listed);
+
+		var read = tools.readEmail(ACCOUNT, "INBOX", uidOf("Årsredovisning 2026"), Optional.empty());
+		assertTrue(read.contains("From:    Bokföring AB <faktura@example.com>"), read);
+		assertTrue(read.contains("To:      Åsa Användare <" + USER + ">"), read);
+		assertTrue(read.contains("Cc:      Örjan Kollega <kollega@example.com>"), read);
+
+		var compact = tools.triageCompact(ACCOUNT, "INBOX", false, 0, 10);
+		assertTrue(compact.contains("From: Bokföring AB <faktura@example.com>"), compact);
+
+		var full = tools.triageEmails(ACCOUNT, "INBOX", false, 0, 10);
+		assertTrue(full.contains("Årsredovisning 2026"), full);
+		assertTrue(full.contains("From: Bokföring AB <faktura@example.com>"), full);
+
+		var searched = tools.searchEmails(ACCOUNT, "INBOX", "hej", 10);
+		assertTrue(searched.contains("From: Bokföring AB <faktura@example.com>"), searched);
+
+		assertFalse((listed + read + compact + full + searched).contains("=?UTF-8?"), "no encoded-words should leak");
+	}
+
+	@Test
 	void sendEmailOverPlainSmtpDeliversToInbox() throws Exception {
 		service.sendEmail(ACCOUNT, USER, null, null, "Sent via SMTP", "hello");
 

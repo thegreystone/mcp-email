@@ -542,9 +542,7 @@ public class EmailService {
 			} else if ("from".equalsIgnoreCase(sortBy)) {
 				Arrays.sort(messages, (a, b) -> {
 					try {
-						var fa = a.getFrom() != null && a.getFrom().length > 0 ? a.getFrom()[0].toString() : "";
-						var fb = b.getFrom() != null && b.getFrom().length > 0 ? b.getFrom()[0].toString() : "";
-						return fa.compareToIgnoreCase(fb);
+						return displayFrom(a).compareToIgnoreCase(displayFrom(b));
 					} catch (Exception e) {
 						return 0;
 					}
@@ -556,7 +554,7 @@ public class EmailService {
 			int step = needsFullScan ? 1 : -1;
 			for (int i = fromIdx; result.size() < limit && i >= 0 && i < messages.length; i += step) {
 				var m = messages[i];
-				var from = m.getFrom() != null && m.getFrom().length > 0 ? m.getFrom()[0].toString() : "(unknown)";
+				var from = displayFrom(m);
 				var date = m.getSentDate() != null ? m.getSentDate().toString() : "(no date)";
 				boolean seen = m.isSet(Flags.Flag.SEEN);
 				boolean answered = m.isSet(Flags.Flag.ANSWERED);
@@ -586,7 +584,7 @@ public class EmailService {
 	/** The recipients of one type as a display string, or null when there are none. */
 	private static String recipients(Message message, Message.RecipientType type) throws MessagingException {
 		var addresses = message.getRecipients(type);
-		return addresses != null && addresses.length > 0 ? InternetAddress.toString(addresses) : null;
+		return display(addresses);
 	}
 
 	public EmailContent readEmail(String account, String folderName, long uid) throws MessagingException, IOException {
@@ -599,8 +597,7 @@ public class EmailService {
 			if (message == null)
 				throw new MessagingException("No message with UID " + uid);
 
-			var from = message.getFrom() != null && message.getFrom().length > 0 ? message.getFrom()[0].toString()
-					: "(unknown)";
+			var from = displayFrom(message);
 			var to = recipients(message, Message.RecipientType.TO);
 			var cc = recipients(message, Message.RecipientType.CC);
 			var date = message.getSentDate() != null ? message.getSentDate().toString() : "(no date)";
@@ -717,15 +714,54 @@ public class EmailService {
 	}
 
 	static String decodeAttachmentName(String rawName) {
-		if (rawName == null || rawName.isBlank()) {
+		return rawName == null || rawName.isBlank() ? null : decodeHeader(rawName);
+	}
+
+	/**
+	 * A header value as the model should read it: RFC 2047 encoded-words decoded, so a Swedish
+	 * subject or sender name is text rather than {@code =?UTF-8?Q?...?=}. Plain values pass
+	 * through; so does a value in a charset this runtime lacks, which stays a usable identifier.
+	 */
+	static String decodeHeader(String value) {
+		if (value == null) {
 			return null;
 		}
 		try {
-			return MimeUtility.decodeText(rawName);
+			return MimeUtility.decodeText(value);
 		} catch (UnsupportedEncodingException e) {
-			// An encoded-word in a charset this JVM lacks: the raw form is still a usable identifier.
-			return rawName;
+			return value;
 		}
+	}
+
+	/**
+	 * An address for display, e.g. {@code Bokföring AB <faktura@example.com>}. The plain string
+	 * form of an address keeps the personal name MIME-encoded; this one decodes it.
+	 */
+	static String display(Address address) {
+		if (!(address instanceof InternetAddress ia)) {
+			return address.toString();
+		}
+		// Built by hand rather than with toUnicodeString(), which quotes any name with non-ASCII characters:
+		// correct on the wire, noise for the reader.
+		var personal = ia.getPersonal();
+		return personal == null || personal.isBlank() ? ia.getAddress() : personal + " <" + ia.getAddress() + ">";
+	}
+
+	/** Addresses for display, comma-separated, or null when there are none. */
+	static String display(Address[] addresses) {
+		if (addresses == null || addresses.length == 0) {
+			return null;
+		}
+		var parts = new ArrayList<String>(addresses.length);
+		for (var address : addresses) {
+			parts.add(display(address));
+		}
+		return String.join(", ", parts);
+	}
+
+	private static String displayFrom(Message m) throws MessagingException {
+		var from = m.getFrom();
+		return from != null && from.length > 0 ? display(from[0]) : "(unknown)";
 	}
 
 	private Part findAttachment(Part part, String name) throws MessagingException, IOException {
@@ -971,7 +1007,7 @@ public class EmailService {
 			int count = Math.min(messages.length, limit > 0 ? limit : 20);
 			for (int i = messages.length - 1; i >= 0 && result.size() < count; i--) {
 				var m = messages[i];
-				var from = m.getFrom() != null && m.getFrom().length > 0 ? m.getFrom()[0].toString() : "(unknown)";
+				var from = displayFrom(m);
 				var date = m.getSentDate() != null ? m.getSentDate().toString() : "(no date)";
 				boolean seen = m.isSet(Flags.Flag.SEEN);
 				boolean answered = m.isSet(Flags.Flag.ANSWERED);
@@ -1279,7 +1315,7 @@ public class EmailService {
 				var m = messages[i];
 
 				var fromAddrs = m.getFrom();
-				var from = (fromAddrs != null && fromAddrs.length > 0) ? fromAddrs[0].toString() : "(unknown)";
+				var from = displayFrom(m);
 				var subject = m.getSubject() != null ? m.getSubject() : "(no subject)";
 				var date = m.getSentDate() != null ? m.getSentDate().toString() : "(no date)";
 
@@ -1364,7 +1400,8 @@ public class EmailService {
 				for (var name : TRIAGE_HEADERS) {
 					var values = m.getHeader(name);
 					if (values != null && values.length > 0) {
-						headers.put(name, String.join("; ", values));
+						headers.put(name,
+								String.join("; ", Arrays.stream(values).map(EmailService::decodeHeader).toList()));
 					}
 				}
 				boolean answered = m.isSet(Flags.Flag.ANSWERED);
@@ -1411,7 +1448,7 @@ public class EmailService {
 			var allHeaders = message.getAllHeaders();
 			while (allHeaders.hasMoreElements()) {
 				var h = allHeaders.nextElement();
-				headers.merge(h.getName(), h.getValue(), (old, val) -> old + "\n" + val);
+				headers.merge(h.getName(), decodeHeader(h.getValue()), (old, val) -> old + "\n" + val);
 			}
 
 			var extracted = extractText(message);

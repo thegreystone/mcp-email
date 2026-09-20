@@ -56,6 +56,14 @@ class AttachmentNameTest {
 	}
 
 	@Test
+	void headerValuesWithSeveralEncodedWordsAreDecoded() {
+		assertEquals("Re: Årsredovisning för 2026",
+				EmailService.decodeHeader("=?UTF-8?Q?Re=3A_=C3=85rsredovisning?= =?UTF-8?Q?_f=C3=B6r_2026?="));
+		assertEquals("plain ascii", EmailService.decodeHeader("plain ascii"));
+		assertNull(EmailService.decodeHeader(null));
+	}
+
+	@Test
 	void missingOrBlankNameIsNull() {
 		assertNull(EmailService.decodeAttachmentName(null));
 		assertNull(EmailService.decodeAttachmentName(""));
