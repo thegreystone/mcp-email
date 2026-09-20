@@ -611,11 +611,25 @@ public class EmailService {
 			if (mimeType != null && mimeType.contains(";")) {
 				mimeType = mimeType.substring(0, mimeType.indexOf(';')).trim();
 			}
-			return new AttachmentContent(attachmentName, mimeType != null ? mimeType : "application/octet-stream",
-					data);
+			// Some servers report the type in upper case in BODYSTRUCTURE; media types are case-insensitive
+			// and clients expect the canonical lower-case form.
+			return new AttachmentContent(attachmentName,
+					mimeType != null ? mimeType.toLowerCase(Locale.ROOT) : "application/octet-stream", data);
 		} finally {
 			folder.close(false);
 		}
+	}
+
+	/**
+	 * A part is an attachment when it carries a file name, whatever its Content-Disposition says.
+	 * Apple Mail sends attachments as {@code inline}, and some clients send no disposition at all,
+	 * so keying on {@code Content-Disposition: attachment} alone hides real attachments. The name
+	 * comes from the disposition's {@code filename} or, failing that, the content type's
+	 * {@code name}.
+	 */
+	private static String attachmentName(Part part) throws MessagingException {
+		var name = part.getFileName();
+		return name != null && !name.isBlank() ? name : null;
 	}
 
 	private Part findAttachment(Part part, String name) throws MessagingException, IOException {
@@ -623,7 +637,7 @@ public class EmailService {
 			var mp = (Multipart) part.getContent();
 			for (int i = 0; i < mp.getCount(); i++) {
 				var bp = mp.getBodyPart(i);
-				if (Part.ATTACHMENT.equalsIgnoreCase(bp.getDisposition()) && name.equals(bp.getFileName())) {
+				if (name.equals(attachmentName(bp))) {
 					return bp;
 				}
 				var found = findAttachment(bp, name);
@@ -642,8 +656,9 @@ public class EmailService {
 			var mp = (Multipart) part.getContent();
 			for (int i = 0; i < mp.getCount(); i++) {
 				var bp = mp.getBodyPart(i);
-				if (Part.ATTACHMENT.equalsIgnoreCase(bp.getDisposition()) && bp.getFileName() != null) {
-					names.add(bp.getFileName());
+				var name = attachmentName(bp);
+				if (name != null) {
+					names.add(name);
 				}
 				names.addAll(extractAttachmentNames(bp));
 			}

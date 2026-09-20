@@ -32,19 +32,26 @@ import com.icegreen.greenmail.configuration.GreenMailConfiguration;
 import com.icegreen.greenmail.junit5.GreenMailExtension;
 import com.icegreen.greenmail.util.GreenMailUtil;
 import com.icegreen.greenmail.util.ServerSetupTest;
+import jakarta.activation.DataHandler;
 import jakarta.mail.Flags;
 import jakarta.mail.Folder;
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
+import jakarta.mail.Part;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
+import jakarta.mail.internet.MimeBodyPart;
+import jakarta.mail.internet.MimeMessage;
+import jakarta.mail.internet.MimeMultipart;
 import jakarta.mail.search.FlagTerm;
+import jakarta.mail.util.ByteArrayDataSource;
 import org.eclipse.angus.mail.imap.IMAPStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -154,6 +161,50 @@ class EmailServiceImapTest {
 			assertTrue(elapsedMillis < 10_000,
 					"expected to give up after about 1 s, took " + elapsedMillis + " ms: " + e.getMessage());
 		}
+	}
+
+	@Test
+	void attachmentsAreFoundWhateverTheDispositionSays() throws Exception {
+		var pdfBytes = "%PDF-1.4 not really".getBytes(StandardCharsets.UTF_8);
+		var binBytes = new byte[] {1, 2, 3, 4};
+
+		var body = new MimeBodyPart();
+		body.setText("See attached.");
+		// Apple Mail style: a real attachment declared as inline.
+		var inlinePdf = new MimeBodyPart();
+		inlinePdf.setDataHandler(new DataHandler(new ByteArrayDataSource(pdfBytes, "application/pdf")));
+		inlinePdf.setFileName("report.pdf");
+		inlinePdf.setDisposition(Part.INLINE);
+		// No Content-Disposition at all; only the content type's name parameter carries the file name.
+		var nameOnly = new MimeBodyPart();
+		nameOnly.setDataHandler(new DataHandler(new ByteArrayDataSource(binBytes, "application/octet-stream")));
+		nameOnly.setHeader("Content-Type", "application/octet-stream; name=\"data.bin\"");
+		// The classic form, to make sure it still works.
+		var classic = new MimeBodyPart();
+		classic.setDataHandler(new DataHandler(new ByteArrayDataSource(binBytes, "application/octet-stream")));
+		classic.setFileName("classic.bin");
+		classic.setDisposition(Part.ATTACHMENT);
+
+		var multipart = new MimeMultipart();
+		for (var part : List.of(body, inlinePdf, nameOnly, classic)) {
+			multipart.addBodyPart(part);
+		}
+		var message = new MimeMessage(Session.getInstance(new Properties()));
+		message.setFrom("sender@example.com");
+		message.setRecipients(Message.RecipientType.TO, USER);
+		message.setSubject("With attachments");
+		message.setContent(multipart);
+		message.saveChanges();
+		greenMail.setUser(USER, USER, PASSWORD).deliver(message);
+
+		var email = service.readEmail(ACCOUNT, "INBOX", uidOf("With attachments"));
+		assertEquals(List.of("report.pdf", "data.bin", "classic.bin"), email.attachments());
+
+		var fetched = service.getAttachment(ACCOUNT, "INBOX", uidOf("With attachments"), "report.pdf");
+		assertArrayEquals(pdfBytes, fetched.data());
+		assertEquals("application/pdf", fetched.mimeType());
+		assertArrayEquals(binBytes,
+				service.getAttachment(ACCOUNT, "INBOX", uidOf("With attachments"), "data.bin").data());
 	}
 
 	@Test
