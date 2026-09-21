@@ -1,6 +1,6 @@
 # Third-party notices
 
-The Email MCP Server is licensed under the BSD 3-Clause License (see [LICENSE](LICENSE)). The release
+The Email MCP Server is licensed under the BSD 3-Clause License (see [LICENSE](../LICENSE)). The release
 artifacts, the uber-jar and the native binaries, also contain the libraries listed below. They stay under
 their own licenses, which are reproduced or linked here as those licenses require. Each library is listed
 once, under the license it is taken under; where the upstream project offers a choice, the alternatives are
